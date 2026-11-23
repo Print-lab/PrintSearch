@@ -11,7 +11,7 @@
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--text)}
 
-/* ---------- Zone de recherche : centrée au départ, remonte après la 1re recherche ---------- */
+/* ---------- Search area: centered at first, moves up after the first search ---------- */
 .stage{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 20px;border-bottom:1px solid var(--line);
   min-height:0;display:flex;flex-direction:column;justify-content:center;
   transition:min-height .75s var(--ease),padding .75s var(--ease),border-color .5s}
@@ -49,7 +49,7 @@ select:focus,input[type=number]:focus{outline:none;border-color:var(--accent);bo
 .dot.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
 .link{border:none;background:none;color:var(--accent);padding:0;font-size:13px;cursor:pointer;text-decoration:underline;box-shadow:none!important;transform:none!important}
 
-/* ---------- Résultats ---------- */
+/* ---------- Results ---------- */
 main{padding:20px;max-width:1240px;margin:0 auto}
 body.hero main{display:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
@@ -170,7 +170,7 @@ body.view-settings .settings button.primary{padding:8px 14px;font-size:14px;bord
     <div class="scard">
       <div class="shead"><strong data-i18n="general"></strong></div>
       <div class="srow" style="margin-top:12px">
-        <label><span data-i18n="language"></span> <select id="langSel"><option value="en">English</option><option value="fr">Français</option></select></label>
+        <label><span data-i18n="language"></span> <select id="langSel"><option value="en">English</option><option value="fr">Français</option><option value="de">Deutsch</option></select></label>
       </div>
       <div class="srow" style="margin-top:14px">
         <label class="site-opt"><input type="checkbox" id="histOn"> <span data-i18n="historyLabel"></span></label>
@@ -211,7 +211,7 @@ async function api(path, opts){
 }
 const post = (p,b) => api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
 
-// Construction DOM : append(string) = texte, jamais du HTML (les titres viennent de sites tiers).
+// DOM construction: append(string) = text, never HTML (titles come from third-party sites).
 function el(tag, props={}, ...kids){
   const e = document.createElement(tag);
   for(const [k,v] of Object.entries(props)){
@@ -222,7 +222,7 @@ function el(tag, props={}, ...kids){
 }
 
 
-// ---------- Stockage local (navigateur) : langue et historique ----------
+// ---------- Local storage (browser): language and history ----------
 const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -252,6 +252,30 @@ const I18N = {
     results:"{n} result(s) shown", none:"No results for these criteria.", pickSite:"Select at least one site.",
     recent:"Recent searches", clearAll:"Clear all", remove:"Remove"
   },
+  de: {
+    tagline:"Eine Suche für Thingiverse, Printables und MakerWorld", placeholder:"3D-Modelle suchen (Benchy, Kopfhörerständer…)", search:"Suchen",
+    price:"Preis", all:"Alle", free:"Kostenlos", paid:"Kostenpflichtig", sort:"Sortierung", relevance:"Relevanz", likes:"Likes", downloads:"Downloads",
+    minLikes:"Min. Likes", minDl:"Min. Downloads", perSite:"Pro Website", loadMore:"Weitere Ergebnisse laden",
+    settings:"Einstellungen", back:"← Zurück zur Suche",
+    settingsIntro:"Tokens werden nur auf diesem Computer im Konfigurationsordner der Anwendung gespeichert. Sprache und Verlauf werden in diesem Browser gespeichert.",
+    general:"Allgemein", language:"Sprache", historyLabel:"Suchverlauf",
+    historyHint:"Zeigt deine letzten Suchen unter der Suchleiste an. Beim Ausschalten wird nichts mehr aufgezeichnet und der Verlauf ausgeblendet; mit „Verlauf löschen“ entfernst du ihn.",
+    clearHistory:"Verlauf löschen", historyCleared:"Verlauf gelöscht", connections:"Verbindungen zu den Websites",
+    connected:"Verbunden", notConnected:"Nicht verbunden", disconnect:"Trennen", connectTv:"Mit Thingiverse verbinden", saveToken:"Token speichern",
+    tokenApp:"App Token", tokenBearer:"Bearer-Token", toastConnected:"Verbunden ✓", toastDisconnected:"Getrennt",
+    hint_thingiverse:"Ohne Verbindung liest die Suche die Webseite mit einem Browser im Hintergrund (langsamer, ohne Autor und Likes). Mit einem Token nutzt sie die API: schneller, mit Autor, Likes und Downloads. Für Like und Sammlungen ist der Token erforderlich. Einen „App Token“ gibt es unter thingiverse.com/developers.",
+    hint_printables:"Die Suche funktioniert ohne Verbindung. Für Like wird ein Bearer-Token benötigt: Auf der Webseite anmelden, die Entwicklerwerkzeuge öffnen (F12), Reiter „Netzwerk“, und bei einer Anfrage an api.printables.com den Wert nach „Authorization: Bearer“ kopieren.",
+    hint_makerworld:"Die Suche funktioniert ohne Verbindung (benötigt einen Chromium-basierten Browser: Chrome, Edge, Brave…). Like und Sammlungen sind für MakerWorld noch nicht verfügbar: Der Token wird für später gespeichert und hat derzeit keine Wirkung.",
+    like:"Like", liked:"Geliked", collection:"＋ Sammlung", open:"Öffnen ↗", paidP:"💰 Kostenpflichtig ({p})",
+    toastLiked:"Geliked ✓", toastAdded:"Hinzugefügt ✓", promptCollection:"Sammlungs-ID:",
+    loadingSites:"Suche… {done}/{total} Websites fertig (bisher {n} Ergebnisse)",
+    browserTitle:"Für die Suche verwendeter Browser", browserAuto:"Automatisch (der erste gefundene)", browserCustom:"Eigener Pfad…",
+    browserPathPh:"Vollständiger Pfad zur Browser-Programmdatei", save:"Speichern", browserNone:"Kein kompatibler Browser gefunden",
+    browserUsing:"Verwendet: {name} — {path}", browserSaved:"Browser gespeichert ✓",
+    browserHint:"MakerWorld und Thingiverse ohne Token werden mit einem Chromium-basierten Browser gelesen, der im Hintergrund läuft (Chrome, Edge, Brave, Vivaldi, Chromium). Edge ist unter Windows bereits installiert, du musst also eventuell nichts installieren. Firefox und Safari werden nicht unterstützt.",
+    results:"{n} Ergebnis(se) angezeigt", none:"Keine Ergebnisse für diese Kriterien.", pickSite:"Wähle mindestens eine Website aus.",
+    recent:"Letzte Suchen", clearAll:"Alle löschen", remove:"Entfernen"
+  },
   fr: {
     tagline:"Une seule recherche pour Thingiverse, Printables et MakerWorld", placeholder:"Rechercher un modèle 3D (benchy, support casque…)", search:"Rechercher",
     price:"Prix", all:"Tous", free:"Gratuit", paid:"Payant", sort:"Tri", relevance:"Pertinence", likes:"Likes", downloads:"Téléchargements",
@@ -277,7 +301,7 @@ const I18N = {
     recent:"Recherches récentes", clearAll:"Tout effacer", remove:"Supprimer"
   }
 };
-let lang = store.get('lang', 'en'); if(!I18N[lang]) lang = 'en';          // anglais par défaut
+let lang = store.get('lang', 'en'); if(!I18N[lang]) lang = 'en';          // English by default
 let historyOn = store.get('historyOn', true);
 let searchHistory = store.get('history', []); if(!Array.isArray(searchHistory)) searchHistory = [];
 let shown = [], statusKey = null, statusVars = {}, histIdx = -1;
@@ -301,7 +325,7 @@ function applyLang(){
   renderHist();
 }
 
-// ---------- Historique de recherche ----------
+// ---------- Search history ----------
 function saveHistory(q){
   if(!historyOn) return;
   searchHistory = [q, ...searchHistory.filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 20);
@@ -317,7 +341,7 @@ function renderHist(){
   const box = $('#hist');
   const items = (historyOn && document.activeElement === $('#q')) ? histItems() : [];
   if(!items.length){ box.hidden = true; return; }
-  const noFocusLoss = e => e.preventDefault();      // garde le focus dans la barre de recherche
+  const noFocusLoss = e => e.preventDefault();      // keeps focus in the search bar
   box.replaceChildren(
     el('div',{class:'hhead'}, el('span',{},tr('recent')),
       el('button',{type:'button',class:'link',onmousedown:noFocusLoss,onclick:clearHistory},tr('clearAll'))),
@@ -348,8 +372,8 @@ async function renderBrowser(){
   const sel = $('#browserSel'); sel.replaceChildren();
   sel.append(el('option', {value:'auto'}, tr('browserAuto')));
   detected.forEach(f => sel.append(el('option', {value:f.id}, f.name)));
-  sel.append(el('option', {value:'custom'}, tr('browserCustom')));
   const known = !info.choice || info.choice === 'auto' || detected.some(f => f.id === info.choice);
+  if(info.custom_allowed !== false || !known) sel.append(el('option', {value:'custom'}, tr('browserCustom')));   // hidden when the server is reachable from the network
   sel.value = known ? (info.choice || 'auto') : 'custom';
   $('#browserPath').hidden = sel.value !== 'custom';
   if(!known) $('#browserPath').value = info.choice;
@@ -407,7 +431,7 @@ function card(m, i){
     img.addEventListener('error',()=>img.remove());
     wrap.append(img);
   }
-  wrap.append('🧊'); // visible tant que l'image n'est pas chargée (ou absente)
+  wrap.append('🧊'); // visible until the image is loaded (or if missing)
 
   const heart = () => el('span',{class:'heart'},'♥');
   const likeBtn = el('button',{onclick:async ev=>{
@@ -445,7 +469,7 @@ function setLoading(on){
 let pages = [], nodeCache = new Map(), curSort = '';
 const SITE_ORDER = Object.keys(SITES);
 
-// Fusionne les résultats d'une page : un modèle de chaque site à tour de rôle, puis tri éventuel
+// Merges the results of a page: one model from each site in turn, then optional sorting
 function mergePage(batch){
   const lists = SITE_ORDER.filter(k => batch[k]).map(k => batch[k]);
   const out = [];
@@ -456,12 +480,12 @@ function mergePage(batch){
   return out;
 }
 
-// Redessine la grille en réutilisant les cartes déjà créées (pas de clignotement ni d'animation rejouée)
+// Redraws the grid, reusing cards already created (no flicker or replayed animation)
 function renderGrid(pending = 0){
   const seenKeys = new Set(), uniq = [], nodes = [];
   for(const m of pages.flatMap(mergePage)){
     const key = m.site + ':' + m.id;
-    if(seenKeys.has(key)) continue;                    // même modèle présent deux fois
+    if(seenKeys.has(key)) continue;                    // same model present twice
     seenKeys.add(key); uniq.push(m);
     let n = nodeCache.get(key);
     if(!n){ n = card(m, uniq.length - 1); nodeCache.set(key, n); }
@@ -475,7 +499,7 @@ function renderGrid(pending = 0){
 async function runSearch(reset){
   const q = reset ? $('#q').value.trim() : lastQ;
   if(!q) return;
-  const mySeq = ++seq;                                 // toute nouvelle recherche annule la précédente
+  const mySeq = ++seq;                                 // any new search cancels the previous one
   if(ctrl) ctrl.abort();
   ctrl = new AbortController();
   const signal = ctrl.signal;
@@ -483,7 +507,7 @@ async function runSearch(reset){
   $('#errors').replaceChildren();
 
   if(reset){
-    document.body.classList.remove('hero');            // la barre remonte avec une animation
+    document.body.classList.remove('hero');            // the bar moves up with an animation
     pages = []; nodeCache.clear(); shown = []; page = 1; lastQ = q;
     $('#grid').replaceChildren(); $('#more').style.display = 'none';
   }
@@ -501,9 +525,9 @@ async function runSearch(reset){
   let pending = sites.length, raw = 0, failures = 0;
   setLoading(true);
   setStatus('loadingSites', {done: 0, total: sites.length, n: shown.length});
-  renderGrid(pending);                                 // cartes grises en attendant la 1re réponse
+  renderGrid(pending);                                 // grey cards while waiting for the first response
 
-  // Un appel par site, en parallèle : les sites rapides s'affichent sans attendre les lents
+  // One call per site, in parallel: fast sites show up without waiting for slow ones
   await Promise.all(sites.map(async site => {
     try{
       const r = await api('/api/search?' + new URLSearchParams({...base, sites: site}), {signal});
@@ -523,11 +547,11 @@ async function runSearch(reset){
   }));
   if(mySeq !== seq) return;
   setLoading(false);
-  if(!reset && failures === sites.length){ page--; pages.pop(); }   // page suivante en échec : on pourra réessayer
+  if(!reset && failures === sites.length){ page--; pages.pop(); }   // next page failed: we can retry
   $('#more').style.display = raw > 0 ? '' : 'none';
 }
 
-// Recherche automatique quand un filtre change (avec une requête déjà saisie)
+// Automatic search when a filter changes (with a query already entered)
 function autoSearch(delay){
   if(!$('#q').value.trim()) return;
   clearTimeout(timer); timer = setTimeout(()=>runSearch(true), delay);
@@ -538,14 +562,14 @@ stage.addEventListener('input',  e => { if(e.target.matches('.filters input[type
 
 $('#f').addEventListener('submit', e => { e.preventDefault(); clearTimeout(timer); $('#hist').hidden = true; runSearch(true); });
 $('#more').addEventListener('click', () => runSearch(false));
-$('#brand').addEventListener('click', () => {      // retour à l'écran d'accueil
+$('#brand').addEventListener('click', () => {      // back to the home screen
   if(ctrl) ctrl.abort(); seq++; clearTimeout(timer);
   setLoading(false); clearSkeleton();
   $('#grid').replaceChildren(); $('#errors').replaceChildren(); setStatus(null); $('#more').style.display='none';
   $('#q').value=''; lastQ=''; shown=[]; pages=[]; nodeCache.clear(); document.body.classList.add('hero'); $('#q').focus();
 });
 
-// Historique : s'affiche quand la barre de recherche a le focus
+// History: shown when the search bar has focus
 $('#q').addEventListener('focus', () => { histIdx = -1; renderHist(); });
 $('#q').addEventListener('input', () => { histIdx = -1; renderHist(); });
 $('#q').addEventListener('blur', () => { $('#hist').hidden = true; });
@@ -558,7 +582,7 @@ $('#q').addEventListener('keydown', e => {
   else if(e.key === 'Escape'){ $('#hist').hidden = true; }
 });
 
-// Réglages généraux
+// General settings
 $('#langSel').addEventListener('change', e => { lang = e.target.value; store.set('lang', lang); applyLang(); });
 $('#histOn').addEventListener('change', e => { historyOn = e.target.checked; store.set('historyOn', historyOn); renderHist(); });
 $('#clearHist').addEventListener('click', clearHistory);

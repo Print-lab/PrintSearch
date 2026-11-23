@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=PrintSearch
-Comment=Recherche de modèles 3D (Thingiverse, Printables, MakerWorld)
+Comment=Search for 3D models (Thingiverse, Printables, MakerWorld)
 Exec=printsearch
 Icon=printsearch
 Categories=Utility;

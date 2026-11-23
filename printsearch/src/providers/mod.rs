@@ -36,7 +36,7 @@ pub struct Model {
     pub author: String,
     pub url: String,
     pub thumbnail: Option<String>,
-    /// None = inconnu ; Some(0.0) = gratuit ; Some(x>0) = payant
+    /// None = unknown; Some(0.0) = free; Some(x>0) = paid
     pub price: Option<f64>,
     pub likes: Option<u64>,
     pub downloads: Option<u64>,
@@ -44,13 +44,13 @@ pub struct Model {
 
 #[async_trait]
 pub trait Provider: Send + Sync {
-    /// `limit` = résultats par page, `page` commence à 1.
+    /// `limit` = results per page, `page` starts at 1.
     async fn search(&self, query: &str, limit: usize, page: usize, token: Option<&str>) -> Result<Vec<Model>>;
     async fn like(&self, _id: &str, _token: &str) -> Result<()> {
-        bail!("« like » non supporté pour ce site")
+        bail!("'like' not supported for this site")
     }
     async fn add_to_collection(&self, _collection: &str, _id: &str, _token: &str) -> Result<()> {
-        bail!("ajout en collection non supporté pour ce site")
+        bail!("adding to a collection not supported for this site")
     }
 }
 
@@ -62,8 +62,8 @@ pub fn provider(site: Site) -> Box<dyn Provider> {
     }
 }
 
-/// Un seul client HTTP pour tout le programme (connexions réutilisées) avec des délais d'attente,
-/// pour qu'un site qui ne répond pas ne bloque jamais une recherche.
+/// A single HTTP client for the whole program (connections reused) with timeouts,
+/// so that a site that does not respond never blocks a search.
 pub(crate) fn client() -> reqwest::Client {
     static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     CLIENT

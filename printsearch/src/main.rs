@@ -11,7 +11,7 @@ use providers::{provider, Site};
 use search::{search_all, Filters, PriceFilter, Sort};
 
 #[derive(Parser)]
-#[command(name = "printsearch", version, about = "Recherche unifiée : MakerWorld, Thingiverse, Printables")]
+#[command(name = "printsearch", version, about = "Unified search: MakerWorld, Thingiverse, Printables")]
 struct Cli {
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -19,15 +19,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Rechercher sur un ou plusieurs sites
+    /// Search one or more sites
     Search {
         query: String,
         #[arg(short, long, value_enum, num_args = 1.., value_delimiter = ',')]
         sites: Vec<Site>,
-        /// Résultats demandés par site
+        /// Results requested per site
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
-        /// Page de résultats (commence à 1)
+        /// Results page (starts at 1)
         #[arg(long, default_value_t = 1)]
         page: usize,
         #[arg(long, value_enum, default_value_t = PriceFilter::All)]
@@ -39,28 +39,28 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         min_downloads: u64,
     },
-    /// Se connecter (Thingiverse : OAuth ou --token ; autres : --token collé depuis le navigateur)
+    /// Log in (Thingiverse: OAuth or --token; others: --token pasted from the browser)
     Login {
         #[arg(value_enum)]
         site: Site,
         #[arg(long)]
         token: Option<String>,
     },
-    /// Lancer l'interface web locale (http://localhost:8787). Sans commande : lance ceci et ouvre le navigateur
+    /// Start the local web interface (http://localhost:8787). With no command: starts it and opens the browser
     Serve {
-        /// Ouvrir le navigateur automatiquement
+        /// Open the browser automatically
         #[arg(long)]
         open: bool,
     },
-    /// Liste les navigateurs compatibles, ou en choisit un : `browser auto|chrome|edge|brave|vivaldi|chromium|<chemin>`
+    /// List compatible browsers, or pick one: `browser auto|chrome|edge|brave|vivaldi|chromium|<path>`
     Browser { choice: Option<String> },
-    /// Liker un modèle
+    /// Like a model
     Like {
         #[arg(value_enum)]
         site: Site,
         id: String,
     },
-    /// Ajouter un modèle à une collection
+    /// Add a model to a collection
     Collect {
         #[arg(value_enum)]
         site: Site,
@@ -81,16 +81,16 @@ async fn main() -> Result<()> {
             let filters = Filters { price, sort, min_likes, min_downloads };
             let out = search_all(&cfg, &sites, &query, limit, page.max(1), &filters).await;
             for (s, e) in &out.errors {
-                eprintln!("[{s}] erreur : {e}");
+                eprintln!("[{s}] error: {e}");
             }
             for m in &out.results {
                 let price = match m.price {
                     Some(p) if p > 0.0 => format!("{p}"),
-                    Some(_) => "gratuit".into(),
+                    Some(_) => "free".into(),
                     None => "?".into(),
                 };
                 println!(
-                    "[{:<11}] {} — {}  ♥{} ⬇{}  prix:{}\n              {}  (id: {})",
+                    "[{:<11}] {} — {}  ♥{} ⬇{}  price:{}\n              {}  (id: {})",
                     m.site.key(),
                     m.title,
                     m.author,
@@ -101,17 +101,17 @@ async fn main() -> Result<()> {
                     m.id
                 );
             }
-            eprintln!("{} résultat(s)", out.results.len());
+            eprintln!("{} result(s)", out.results.len());
         }
         Cmd::Login { site, token } => {
             let t = match (site, token) {
                 (_, Some(t)) => t,
                 (Site::Thingiverse, None) => providers::thingiverse::oauth_login().await?,
-                _ => anyhow::bail!("pour ce site, fournissez --token (voir README)"),
+                _ => anyhow::bail!("for this site, provide --token (see README)"),
             };
             cfg.tokens.insert(site.key().into(), t);
             cfg.save()?;
-            println!("Connecté à {}.", site.key());
+            println!("Logged in to {}.", site.key());
         }
         Cmd::Serve { open } => server::run(open).await?,
         Cmd::Browser { choice } => match choice {
@@ -134,14 +134,14 @@ async fn main() -> Result<()> {
             }
         },
         Cmd::Like { site, id } => {
-            let t = cfg.token_for(site).context("non connecté : lancez `login` d'abord")?;
+            let t = cfg.token_for(site).context("not logged in: run `login` first")?;
             provider(site).like(&id, &t).await?;
-            println!("Modèle {id} liké sur {}.", site.key());
+            println!("Model {id} liked on {}.", site.key());
         }
         Cmd::Collect { site, collection, id } => {
-            let t = cfg.token_for(site).context("non connecté : lancez `login` d'abord")?;
+            let t = cfg.token_for(site).context("not logged in: run `login` first")?;
             provider(site).add_to_collection(&collection, &id, &t).await?;
-            println!("Modèle {id} ajouté à la collection {collection}.");
+            println!("Model {id} added to collection {collection}.");
         }
     }
     Ok(())

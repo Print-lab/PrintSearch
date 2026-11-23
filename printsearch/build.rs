@@ -1,7 +1,7 @@
-//! Intègre l'icône dans l'exécutable Windows (.exe). Sans effet sur les autres systèmes.
-//! `CARGO_CFG_TARGET_OS` désigne le système *cible* : ça marche aussi en compilation croisée depuis Linux
-//! (il faut alors `windres`, fourni par le paquet mingw-w64). Si l'intégration échoue, la compilation continue
-//! simplement sans icône.
+//! Embeds the icon in the Windows executable (.exe). Has no effect on other systems.
+//! `CARGO_CFG_TARGET_OS` refers to the *target* system: this also works when cross-compiling from Linux
+//! (which requires `windres`, provided by the mingw-w64 package). If embedding fails, the build simply
+//! continues without an icon.
 fn main() {
     println!("cargo:rerun-if-changed=packaging/printsearch.ico");
     println!("cargo:rerun-if-changed=build.rs");

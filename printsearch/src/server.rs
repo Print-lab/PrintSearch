@@ -1,4 +1,6 @@
-//! Interface web locale. Écoute uniquement sur 127.0.0.1 : les jetons ne quittent pas votre machine.
+//! Local web interface. Listens on 127.0.0.1 only by default: tokens never leave your machine.
+//! To reach it from another machine set `PRINTSEARCH_BIND` (address to listen on) and, if you use a
+//! host name or a wildcard bind (0.0.0.0), `PRINTSEARCH_ALLOWED_HOSTS` (comma-separated names).
 use crate::config::Config;
 use crate::providers::{provider, thingiverse, Site};
 use crate::search::{search_all, Filters, PriceFilter, Sort};
@@ -13,7 +15,7 @@ use axum::{
 use serde::Deserialize;
 use anyhow::Context;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 
 type Shared = Arc<Mutex<Config>>;
@@ -23,17 +25,58 @@ fn err(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::BAD_GATEWAY, format!("{e:#}"))
 }
 fn site_of(k: &str) -> Result<Site, (StatusCode, String)> {
-    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("site inconnu : {k}")))
+    Site::from_key(k).ok_or((StatusCode::BAD_REQUEST, format!("unknown site: {k}")))
 }
 
-/// Protection contre les pages web tierces (CSRF, « DNS rebinding ») : seules les requêtes adressées
-/// à localhost:8787 et, si elles ont une origine, venant de localhost:8787 sont acceptées.
+const PORT: u16 = 8787;
+const DEFAULT_BIND: &str = "127.0.0.1";
+
+/// Address to listen on: `PRINTSEARCH_BIND`, or 127.0.0.1.
+fn bind_addr() -> String {
+    std::env::var("PRINTSEARCH_BIND")
+        .ok()
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_BIND.into())
+}
+
+/// True for loopback addresses (127.0.0.0/8, ::1) and `localhost`: not reachable from the network.
+fn is_loopback(addr: &str) -> bool {
+    addr.parse::<std::net::IpAddr>().map_or(addr == "localhost", |ip| ip.is_loopback())
+}
+
+fn is_wildcard(addr: &str) -> bool {
+    addr == "0.0.0.0" || addr == "::"
+}
+
+/// `Host` / `Origin` values that are accepted: localhost, 127.0.0.1, the bind address (unless it is
+/// a wildcard) and every name in `PRINTSEARCH_ALLOWED_HOSTS` (comma-separated), each with the port.
+fn allowed_hosts() -> &'static Vec<String> {
+    static HOSTS: OnceLock<Vec<String>> = OnceLock::new();
+    HOSTS.get_or_init(|| {
+        let mut hosts = vec!["localhost".to_string(), DEFAULT_BIND.to_string()];
+        let bind = bind_addr();
+        if !is_wildcard(&bind) {
+            hosts.push(bind);
+        }
+        if let Ok(extra) = std::env::var("PRINTSEARCH_ALLOWED_HOSTS") {
+            hosts.extend(extra.split(',').map(|h| h.trim().to_lowercase()).filter(|h| !h.is_empty()));
+        }
+        hosts
+            .into_iter()
+            .map(|h| if h.contains(':') && !h.starts_with('[') { format!("[{h}]:{PORT}") } else { format!("{h}:{PORT}") })
+            .collect()
+    })
+}
+
+/// Protection against third-party web pages (CSRF, "DNS rebinding"): only requests addressed
+/// to an allowed host and, if they carry an origin, coming from an allowed host, are accepted.
 async fn local_only(req: Request, next: Next) -> Response {
-    const OK: [&str; 2] = ["localhost:8787", "127.0.0.1:8787"];
-    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| OK.contains(&h));
+    let ok = allowed_hosts();
+    let host_ok = req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map_or(false, |h| ok.iter().any(|a| a == h));
     let origin_ok = match req.headers().get(header::ORIGIN).and_then(|o| o.to_str().ok()) {
         None => true,
-        Some(o) => o.strip_prefix("http://").map_or(false, |h| OK.contains(&h)),
+        Some(o) => o.strip_prefix("http://").map_or(false, |h| ok.iter().any(|a| a == h)),
     };
     if host_ok && origin_ok {
         next.run(req).await
@@ -60,13 +103,20 @@ pub async fn run(open_browser: bool) -> anyhow::Result<()> {
         .route("/callback", get(callback))
         .layer(middleware::from_fn(local_only))
         .with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8787")
+    let bind = bind_addr();
+    let listener = tokio::net::TcpListener::bind((bind.as_str(), PORT))
         .await
-        .context("port 8787 already in use (another PrintSearch running?) / port 8787 déjà utilisé")?;
-    tokio::task::spawn_blocking(crate::browser::warm); // navigateur prêt avant la 1re recherche
-    println!("Interface disponible sur http://localhost:8787 (fermez cette fenêtre ou Ctrl+C pour arrêter)");
+        .with_context(|| format!("cannot listen on {bind}:{PORT} (is the address valid and assigned to this machine, and is the port free?)"))?;
+    tokio::task::spawn_blocking(crate::browser::warm); // browser ready before the first search
+    let bracketed = if bind.contains(':') { format!("[{bind}]") } else { bind.clone() }; // IPv6 literal
+    let shown = if bind == DEFAULT_BIND || is_wildcard(&bind) { "localhost".to_string() } else { bracketed.clone() };
+    let url = format!("http://{shown}:{PORT}");
+    println!("Interface available at {url} (close this window or press Ctrl+C to stop)");
+    if !is_loopback(&bind) {
+        eprintln!("Warning: listening on {bracketed}:{PORT}. There is no authentication: anyone who can reach this address can use the interface and change the saved tokens.");
+    }
     if open_browser {
-        let _ = open::that("http://localhost:8787");
+        let _ = open::that(&url);
     }
     axum::serve(listener, app).await?;
     Ok(())
@@ -120,7 +170,7 @@ struct LoginBody {
 
 async fn login(State(cfg): State<Shared>, Json(b): Json<LoginBody>) -> ApiResult {
     let site = site_of(&b.site)?;
-    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "jeton vide".into()))?;
+    let token = b.token.filter(|t| !t.trim().is_empty()).ok_or((StatusCode::BAD_REQUEST, "empty token".into()))?;
     let mut c = cfg.lock().await;
     c.tokens.insert(site.key().into(), token.trim().to_string());
     c.save().map_err(err)?;
@@ -143,7 +193,7 @@ struct ActionBody {
 }
 
 async fn token_of(cfg: &Shared, site: Site) -> Result<String, (StatusCode, String)> {
-    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "non connecté à ce site".into()))
+    cfg.lock().await.token_for(site).ok_or((StatusCode::UNAUTHORIZED, "not connected to this site".into()))
 }
 
 async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
@@ -156,7 +206,7 @@ async fn like(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult
 async fn collect(State(cfg): State<Shared>, Json(b): Json<ActionBody>) -> ApiResult {
     let site = site_of(&b.site)?;
     let t = token_of(&cfg, site).await?;
-    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "collection manquante".into()))?;
+    let col = b.collection.ok_or((StatusCode::BAD_REQUEST, "missing collection".into()))?;
     provider(site).add_to_collection(&col, &b.id, &t).await.map_err(err)?;
     Ok(Json(json!({ "ok": true })))
 }
@@ -178,7 +228,7 @@ async fn callback(State(cfg): State<Shared>, Query(p): Query<CallbackParams>) ->
     Ok(Redirect::to("/#parametres"))
 }
 
-/// Icônes des sites, intégrées au binaire (remplaçables : voir web/icons/).
+/// Site icons, embedded in the binary (replaceable: see web/icons/).
 async fn icon(Path(name): Path<String>) -> Result<([(header::HeaderName, &'static str); 1], &'static str), StatusCode> {
     let svg = match name.as_str() {
         "thingiverse.svg" => include_str!("../web/icons/thingiverse.svg"),
@@ -194,6 +244,7 @@ fn browser_json(choice: Option<String>) -> Value {
         "choice": choice.clone().unwrap_or_else(|| "auto".into()),
         "detected": crate::browser::detect(),
         "effective": crate::browser::effective(choice.as_deref()),
+        "custom_allowed": is_loopback(&bind_addr()),
     })
 }
 
@@ -209,6 +260,14 @@ struct BrowserBody {
 
 async fn browser_set(State(cfg): State<Shared>, Json(b): Json<BrowserBody>) -> ApiResult {
     let choice = b.choice.trim().to_string();
+    // A custom path would let anyone who can reach a network listener pick a program to launch.
+    let known = choice.is_empty() || choice == "auto" || crate::browser::detect().iter().any(|f| f.id == choice);
+    if !is_loopback(&bind_addr()) && !known {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "custom browser paths are disabled while listening on a non-loopback address (PRINTSEARCH_BIND); pick a detected browser, or run `printsearch browser <path>` on the server".into(),
+        ));
+    }
     crate::browser::validate_choice(&choice).map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
     let stored = if choice.is_empty() || choice == "auto" { None } else { Some(choice) };
     {

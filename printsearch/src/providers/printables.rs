@@ -1,6 +1,6 @@
-//! Printables n'a pas d'API publique documentée : on utilise le GraphQL utilisé par leur site.
-//! ⚠ Non officiel : noms de champs/mutations à vérifier avec l'onglet Réseau du navigateur,
-//! ils peuvent changer sans préavis. Le jeton (Bearer) se récupère depuis le navigateur connecté.
+//! Printables has no documented public API: we use the GraphQL API used by their website.
+//! ⚠ Unofficial: field/mutation names to verify with the browser's Network tab,
+//! they may change without notice. The (Bearer) token is obtained from the logged-in browser.
 use super::*;
 
 pub struct Printables {
@@ -20,7 +20,7 @@ impl Printables {
         }
         let v: Value = req.send().await?.error_for_status()?.json().await?;
         if let Some(e) = v.get("errors") {
-            bail!("erreur GraphQL Printables : {e}");
+            bail!("Printables GraphQL error: {e}");
         }
         Ok(v)
     }
@@ -29,7 +29,7 @@ impl Printables {
 #[async_trait]
 impl Provider for Printables {
     async fn search(&self, query: &str, limit: usize, page: usize, token: Option<&str>) -> Result<Vec<Model>> {
-        // `offset` n'est ajouté qu'à partir de la page 2 ; `price` est retiré s'il est refusé.
+        // `offset` is only added from page 2 onwards; `price` is removed if it is rejected.
         let (decl, arg) = if page > 1 { (", $offset: Int", ", offset: $offset") } else { ("", "") };
         let build = |extra: &str| {
             format!(

@@ -17,8 +17,8 @@ A small Rust application with a local web interface and a command-line mode: sea
 - Filters: **sites, price (free / paid), sort (relevance / likes / downloads), minimum likes, minimum downloads, results per site**. Changing a filter re-runs the search automatically.
 - **Load more results** pagination, with a short-lived cache so repeated searches are fast.
 - **Like** and **add to collection** from the result cards (see [feature support](#feature-support)).
-- **Search history** under the search bar (can be turned off) and a **language setting** (English by default, French available).
-- Local only: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer.
+- **Search history** under the search bar (can be turned off) and a **language setting** (English by default; French and German available).
+- Local by default: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer. See [Access from another machine](#access-from-another-machine-optional) to change this.
 - Also usable from the **command line**.
 
 ## Requirements
@@ -53,6 +53,58 @@ sudo apt install ./target/debian/printsearch_*_amd64.deb
 ```
 
 A Chromium-based browser (Chromium, Chrome, Edge or Brave) is *recommended* by the package, so `apt` will offer to install one. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` in `Cargo.toml`.
+
+### Headless Linux server (systemd)
+
+PrintSearch runs fine on a server without a screen. Packages needed (Debian / Ubuntu):
+
+```
+sudo apt install -y git curl build-essential chromium   # Ubuntu: chromium-browser
+```
+
+- `git`, `curl`, `build-essential` (C compiler and linker): to fetch and build the sources.
+- A Chromium-based browser, used headless in the background. The package is called `chromium` on Debian and `chromium-browser` on Ubuntu (which may install a snap); Google Chrome, Brave or Edge from their own `.deb` packages also work. If none is detected, pick one with `printsearch browser <name or /path/to/browser>`.
+- Rust (stable) through [rustup](https://rustup.rs/) (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, then `source "$HOME/.cargo/env"`). `rustfmt` is part of the default profile.
+
+Build, then run `printsearch serve` (not plain `printsearch`, which tries to open a browser window):
+
+```
+git clone https://github.com/Print-lab/PrintSearch.git
+cd PrintSearch/printsearch
+cargo build --release
+./target/release/printsearch serve
+```
+
+To keep it running after you log out and start it at boot, create `/etc/systemd/system/printsearch.service` (adjust `User` and the paths):
+
+```
+[Unit]
+Description=PrintSearch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/opt/PrintSearch/printsearch
+ExecStart=/opt/PrintSearch/printsearch/target/release/printsearch serve
+# Optional, to reach it from your network (see "Access from another machine"):
+# Environment=PRINTSEARCH_BIND=192.168.1.10
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```
+sudo systemctl daemon-reload
+sudo systemctl enable --now printsearch
+journalctl -u printsearch -f          # logs
+sudo ss -tlnp | grep 8787             # check that the port is listening
+```
+
+Run the service as the user whose home holds the configuration (`~/.config/printsearch/`), so saved tokens are found. After rebuilding, run `sudo systemctl restart printsearch`.
 
 ### Windows executable
 
@@ -109,6 +161,24 @@ printsearch browser edge            # chrome | edge | brave | vivaldi | chromium
 ```
 
 The browser runs in the background (no window), with images disabled for speed; your own browsing is untouched.
+
+### Access from another machine (optional)
+
+By default the server only listens on `127.0.0.1`. To reach it from another machine (for example a headless Linux server), set the address to listen on **before** starting it:
+
+```
+PRINTSEARCH_BIND=192.168.1.10 printsearch serve
+```
+
+Requests are only accepted when their `Host` is `localhost`, `127.0.0.1` or the bind address. If you use a host name, or bind to `0.0.0.0`, list the names you will type in the browser:
+
+```
+PRINTSEARCH_BIND=0.0.0.0 PRINTSEARCH_ALLOWED_HOSTS=myserver,192.168.1.10 printsearch serve
+```
+
+Notes: entries of `PRINTSEARCH_ALLOWED_HOSTS` are host names or IP addresses without a port (lower-case); the port is always 8787 and only plain `http://` is accepted (no TLS reverse proxy). With a wildcard bind (`0.0.0.0`) the server still prints `http://localhost:8787`: use the server's name or IP address in your browser. While `PRINTSEARCH_BIND` is a non-loopback address (for example `0.0.0.0` or a LAN address), a custom browser path cannot be saved from the web interface (use `printsearch browser <path>` on the server).
+
+⚠ There is no authentication. Anyone who can reach that address can use PrintSearch and change the saved tokens, and what you type (tokens included) travels unencrypted because the connection is plain HTTP. Only do this on a trusted network, restrict the port with a firewall, or use an SSH tunnel instead (`ssh -L 8787:localhost:8787 user@server`).
 
 ## Connecting your accounts
 
@@ -189,7 +259,6 @@ When a value is unknown (for example likes on MakerWorld), the "min likes / min 
 - **Printables returns a GraphQL error or nothing**: the unofficial API may have changed; open an issue with the message.
 - **Like fails**: your token may have expired or the route may have changed (see *Feature support*).
 - **"Address already in use"**: port **8787** is fixed (the Thingiverse OAuth redirect depends on it). Close the other instance.
-- **Server error messages are in French** for now; the interface itself is fully translated.
 
 ## Limitations & legal notes
 

@@ -3,7 +3,7 @@ name = "printsearch"
 version = "0.2.0"
 authors = ["Print-lab"]
 edition = "2021"
-description = "Recherche unifiée de modèles 3D (Thingiverse, Printables, MakerWorld)"
+description = "Unified search for 3D models (Thingiverse, Printables, MakerWorld)"
 license = "GPL-3.0-only"
 repository = "https://github.com/Print-lab/PrintSearch"
 readme = "README.md"
@@ -39,5 +39,5 @@ assets = [
     ["packaging/printsearch.png",     "usr/share/icons/hicolor/256x256/apps/", "644"],
 ]
 
-# Évite que Cargo remonte chercher un Cargo.toml parent égaré
+# Prevents Cargo from walking up to find a stray parent Cargo.toml
 [workspace]
