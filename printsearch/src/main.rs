@@ -1,4 +1,4 @@
-// Windows : pas de fenêtre de terminal quand on lance l'application (la barre d'état la remplace).
+// Windows: no terminal window when the application is started (the tray icon replaces it).
 #![cfg_attr(all(windows, has_tray), windows_subsystem = "windows")]
 
 mod app;
@@ -42,14 +42,14 @@ fn real_main() -> Result<()> {
         Cmd::Serve { open, no_tray, foreground } => app::run(open, !no_tray, foreground),
         cmd => {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-            let ctx = Ctx { cfg: Arc::new(Mutex::new(cfg)), in_app: false };
+            let ctx = Ctx { cfg: Arc::new(Mutex::new(cfg)), in_app: false, host_local: true };
             let result = rt.block_on(async {
                 let mut out = String::new();
                 let r = commands::execute(cmd, &ctx, &mut out).await;
-                let _ = std::io::Write::write_all(&mut std::io::stdout(), out.as_bytes()); // sans panique si la sortie est fermée
+                let _ = std::io::Write::write_all(&mut std::io::stdout(), out.as_bytes()); // without a panic if the output is closed
                 r
             });
-            browser::shutdown(); // pas de navigateur d'arrière-plan laissé derrière une commande
+            browser::shutdown(); // no background browser left behind by a command
             result
         }
     }

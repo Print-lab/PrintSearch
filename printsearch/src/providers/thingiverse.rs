@@ -1,6 +1,6 @@
-//! API officielle : https://www.thingiverse.com/developers (jeton requis).
-//! Sans jeton, ou si l'API échoue, repli sur la lecture du site avec un Chrome piloté (voir browser.rs).
-//! ⚠ Vérifiez les chemins like/collections dans la doc officielle : ils ont déjà évolué.
+//! Official API: https://www.thingiverse.com/developers (token required).
+//! Without a token, or if the API fails, falls back to reading the site with a driven Chrome (see browser.rs).
+//! ⚠ Check the like/collections paths in the official docs: they have already changed.
 use super::*;
 use crate::browser;
 use anyhow::Context;
@@ -25,7 +25,7 @@ impl Thingiverse {
         if !resp.status().is_success() {
             let status = resp.status();
             let body: String = resp.text().await.unwrap_or_default().chars().take(200).collect();
-            bail!("API Thingiverse : HTTP {status} {body}");
+            bail!("Thingiverse API: HTTP {status} {body}");
         }
         let v: Value = resp.json().await?;
         let hits = v.get("hits").and_then(|h| h.as_array()).or_else(|| v.as_array()).cloned().unwrap_or_default();
@@ -39,7 +39,7 @@ impl Thingiverse {
                 author: h.get("creator").and_then(|c| text(c, "name")).unwrap_or_default(),
                 url: text(h, "public_url").unwrap_or_default(),
                 thumbnail: text(h, "thumbnail"),
-                price: Some(0.0), // Thingiverse : tout est gratuit
+                price: Some(0.0), // Thingiverse: everything is free
                 likes: h.get("like_count").and_then(|x| x.as_u64()),
                 downloads: h.get("download_count").and_then(|x| x.as_u64()),
             })
@@ -77,7 +77,7 @@ impl Provider for Thingiverse {
                 Err(api) => self
                     .search_web(query, limit, page)
                     .await
-                    .map_err(|web| anyhow::anyhow!("{api:#} ; repli navigateur : {web:#}")),
+                    .map_err(|web| anyhow::anyhow!("{api:#}; browser fallback: {web:#}")),
             },
             None => self.search_web(query, limit, page).await,
         }
@@ -107,7 +107,7 @@ impl Provider for Thingiverse {
 pub const REDIRECT: &str = "http://localhost:8787/callback";
 
 pub fn authorize_url() -> Result<String> {
-    let id = std::env::var("THINGIVERSE_CLIENT_ID").context("THINGIVERSE_CLIENT_ID manquant")?;
+    let id = std::env::var("THINGIVERSE_CLIENT_ID").context("THINGIVERSE_CLIENT_ID missing")?;
     Ok(format!(
         "https://www.thingiverse.com/login/oauth/authorize?client_id={id}&redirect_uri={}&response_type=code",
         urlencoding::encode(REDIRECT)
@@ -115,8 +115,8 @@ pub fn authorize_url() -> Result<String> {
 }
 
 pub async fn exchange_code(code: &str) -> Result<String> {
-    let id = std::env::var("THINGIVERSE_CLIENT_ID").context("THINGIVERSE_CLIENT_ID manquant")?;
-    let secret = std::env::var("THINGIVERSE_CLIENT_SECRET").context("THINGIVERSE_CLIENT_SECRET manquant")?;
+    let id = std::env::var("THINGIVERSE_CLIENT_ID").context("THINGIVERSE_CLIENT_ID missing")?;
+    let secret = std::env::var("THINGIVERSE_CLIENT_SECRET").context("THINGIVERSE_CLIENT_SECRET missing")?;
     let body = client()
         .post("https://www.thingiverse.com/login/oauth/access_token")
         .form(&[("client_id", id.as_str()), ("client_secret", secret.as_str()), ("code", code)])
@@ -127,13 +127,13 @@ pub async fn exchange_code(code: &str) -> Result<String> {
         .await?;
     body.split('&')
         .find_map(|kv| kv.strip_prefix("access_token=").map(str::to_string))
-        .context("access_token absent de la réponse")
+        .context("access_token missing from the response")
 }
 
-/// Connexion en ligne de commande : serveur de callback éphémère.
+/// Command-line login: ephemeral callback server.
 pub async fn oauth_login() -> Result<String> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    println!("Ouvrez cette URL dans votre navigateur :\n{}\n", authorize_url()?);
+    println!("Open this URL in your browser:\n{}\n", authorize_url()?);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8787").await?;
     let (mut sock, _) = listener.accept().await?;
     let mut buf = [0u8; 4096];
@@ -143,9 +143,9 @@ pub async fn oauth_login() -> Result<String> {
         .split("code=")
         .nth(1)
         .and_then(|s| s.split(|c: char| c == '&' || c == ' ').next())
-        .context("code OAuth absent de la redirection")?
+        .context("OAuth code missing from the redirect")?
         .to_string();
-    sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nConnexion reussie, vous pouvez fermer cet onglet.")
+    sock.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nLogin successful, you can close this tab.")
         .await?;
     exchange_code(&code).await
 }

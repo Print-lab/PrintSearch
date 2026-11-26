@@ -17,8 +17,8 @@ A small Rust application with a local web interface and a command-line mode: sea
 - Filters: **sites, price (free / paid), sort (relevance / likes / downloads), minimum likes, minimum downloads, results per site**. Changing a filter re-runs the search automatically.
 - **Load more results** pagination, with a short-lived cache so repeated searches are fast.
 - **Like** and **add to collection** from the result cards (see [feature support](#feature-support)).
-- **Search history** under the search bar (can be turned off) and a **language setting** (English by default, French available).
-- Local only: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer.
+- **Search history** under the search bar (can be turned off) and a **language setting** (English by default; French and German available).
+- Local by default: the server listens on `127.0.0.1` and refuses requests that do not come from `localhost:8787` (protection against malicious web pages); your tokens never leave your computer. See [Access from another machine](#access-from-another-machine-optional) for an optional network setup.
 - **Runs in the background, without a terminal window:** a **tray icon** (Windows taskbar / Linux notification area) opens the interface, the console or quits the app.
 - A built-in **console** (⚙ Settings → Advanced settings) that accepts the same commands as the terminal, and a **`logs` command** to display or export the application log for bug reports.
 - **Update check** against this GitHub repository (Settings, command line, and a discreet notice at startup that you can turn off). Nothing is downloaded or installed automatically.
@@ -57,10 +57,49 @@ sudo apt install ./target/debian/printsearch_*_amd64.deb
 
 A Chromium-based browser (Chromium, Chrome, Edge or Brave) is *recommended* by the package, so `apt` will offer to install one. After installation, "PrintSearch" appears in your application menu and `printsearch` is available in the terminal. Before distributing the package, fill in `maintainer` in `Cargo.toml`.
 
+### Headless Linux server (systemd)
+
+On a machine without a screen, run PrintSearch as a service. The tray icon is not needed there: start it with `serve --no-tray`.
+
+```bash
+sudo apt install git curl build-essential chromium      # Ubuntu: chromium-browser
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+git clone https://github.com/Print-lab/PrintSearch.git && cd PrintSearch/printsearch
+cargo build --release
+```
+
+A systemd user unit (`~/.config/systemd/user/printsearch.service`):
+
+```ini
+[Unit]
+Description=PrintSearch
+
+[Service]
+ExecStart=%h/PrintSearch/printsearch/target/release/printsearch serve --no-tray
+Restart=on-failure
+# only for network access, see below:
+#Environment=PRINTSEARCH_BIND=192.168.1.20
+#Environment=PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now printsearch
+sudo loginctl enable-linger "$USER"      # keep it running after you log out
+```
+
+- The log is `~/.local/share/printsearch/logs/printsearch.log`; `printsearch logs` shows it.
+- The commands `printsearch status` and `printsearch quit` must run with the same environment (for example the same `PRINTSEARCH_BIND`) as the service.
+- Only one instance runs per user.
+- To reach the interface from another machine, see [Access from another machine](#access-from-another-machine-optional).
+
 ### Windows executable
 
 The `.exe` embeds the application icon. 
-Build on Windows with `cargo build --release`, then copy `target\release\printsearch.exe` anywhere. A console window stays open while the app runs: closing it stops the server. Windows SmartScreen or the firewall may show a prompt on first launch (the server only listens locally, you can allow it).
+Build on Windows with `cargo build --release`, then copy `target\release\printsearch.exe` anywhere. The app runs without a console window: use its tray icon or `printsearch quit` to stop it. Windows SmartScreen or the firewall may show a prompt on first launch (the server only listens locally, you can allow it).
 
 ### Cross-compiling the Windows `.exe` from Linux
 
@@ -111,7 +150,7 @@ Type a query, press Enter. Use the filter row under the search bar; the ⚙ butt
 
 ### Console and commands
 
-**⚙ Settings → Advanced settings → Open the console** opens a terminal-like page inside the app. It runs **the same commands as the terminal**: type `help` to list them. `↑`/`↓` browse your history, `Tab` completes, `clear` clears the screen, `lang en|fr` changes the language. Commands containing a token are never kept in the history and are masked on screen and in the log.
+**⚙ Settings → Advanced settings → Open the console** opens a terminal-like page inside the app. It runs **the same commands as the terminal**: type `help` to list them. `↑`/`↓` browse your history, `Tab` completes, `clear` clears the screen, `lang en|de|fr` changes the language. Commands containing a token are never kept in the history and are masked on screen and in the log.
 
 ### Command line
 
@@ -136,6 +175,22 @@ printsearch --version
 All of these also work in the in-app console. On **Windows** the program has no console window of its own: run from a terminal it attaches to it and prints its output, but the prompt may come back before the output (use `printsearch.exe ... | more`, or PowerShell, to wait for it).
 
 `-l/--limit` is the number of results *per site* and *per page*; `--page` starts at 1.
+
+### Access from another machine (optional)
+
+By default PrintSearch listens on `127.0.0.1` only. To use it from another computer (for example a headless server), set two environment variables **before starting it** (in the systemd unit with `Environment=` lines, in a shell with `export`):
+
+```bash
+export PRINTSEARCH_BIND=192.168.1.20            # address to listen on; 0.0.0.0 or :: = all interfaces
+export PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20   # names/addresses browsers may use, comma-separated
+```
+
+- Write host names in lower case, without a port and without `http://`. Only plain `http` is supported.
+- With a wildcard bind (`0.0.0.0`, `::`) the printed address is `localhost`.
+- The connection is **plain HTTP without authentication**: anyone who can reach the port can search and use your connected accounts. Use it only on a network you trust, or behind a firewall / VPN.
+- PrintSearch refuses these actions for clients that are not on the PrintSearch computer itself: a custom browser path, `logs export` and `logs clear`, `quit`, and connecting Thingiverse with OAuth. To save the log from another machine, download it with the **Download logs** button of the interface.
+- A request counts as local if it comes from loopback or from an address of the same machine. That includes other users of that computer, an SSH tunnel and a reverse proxy on the same host: they are as trusted as the computer itself.
+- The Thingiverse OAuth redirect is fixed to `http://localhost:8787/callback`. With a bind to a LAN address the server has no listener on `localhost:8787`, so forward the port (`ssh -L 8787:<server-IP>:8787 <server>`) and open `http://localhost:8787` through the tunnel. Or use a Thingiverse App Token instead, which works from anywhere.
 
 ### Choosing the browser used for searches
 
@@ -205,7 +260,7 @@ In a `config.json` inside the application's configuration folder (typically `~/.
 
 ## Logs and bug reports
 
-PrintSearch keeps a log of what it does (searches, errors, browser start-up, updates). It **never contains your tokens**, but it does contain your search terms and stays on your computer. Location: `~/.local/share/printsearch/logs/` on Linux, `%LOCALAPPDATA%\printsearch\printsearch\data\logs\` on Windows (`printsearch logs path` prints it). It is limited to about 2 MB (one rotation).
+PrintSearch keeps a log of what it does (searches, errors, browser start-up, updates). It **never contains your tokens**, but it also holds your search terms, file paths and the sites you connected, and stays on your computer. Location: `~/.local/share/printsearch/logs/` on Linux, `%LOCALAPPDATA%\printsearch\printsearch\data\logs\` on Windows (`printsearch logs path` prints it). It is limited to about 2 MB (one rotation).
 
 ```bash
 printsearch logs                  # last 50 lines
@@ -247,7 +302,6 @@ When a value is unknown (for example likes on MakerWorld), the "min likes / min 
 - **Port 8787 in use** by another program: the port is fixed (the Thingiverse OAuth redirect depends on it). Close that program. (Launching PrintSearch twice is fine: the second launch simply opens the first.)
 - **"GitHub rate limit reached"** (update check): GitHub limits anonymous API calls per IP address. The app then falls back to reading the public releases page; if both fail, try again later.
 - **"invalid peer certificate" / TLS errors** behind a company proxy or an antivirus that inspects HTTPS: the app uses your system's certificate store, so install your organization's root certificate there.
-- **Server error messages are in French** for now; the interface itself is fully translated.
 
 ## Limitations & legal notes
 

@@ -1,6 +1,6 @@
-//! Commandes de l'application. Les mêmes commandes servent :
-//!  - dans un terminal : `printsearch search "vase" --price free`
-//!  - dans la console intégrée à l'interface web (page « Console »).
+//! Application commands. The same commands are used:
+//!  - in a terminal: `printsearch search "vase" --price free`
+//!  - in the console built into the web interface ("Console" page).
 use crate::config::Config;
 use crate::log::{self, log_info, Level};
 use crate::providers::{provider, Site};
@@ -8,7 +8,7 @@ use crate::search::{search_all, Filters, PriceFilter, Sort};
 use crate::{browser, update};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use std::{fmt::Write as _, path::PathBuf, sync::Arc, time::Duration};
+use std::{fmt::Write as _, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 
 #[derive(Parser)]
@@ -103,12 +103,34 @@ pub enum LogsAction {
     Clear,
 }
 
-/// Contexte d'exécution : la configuration partagée et le lieu d'exécution.
+/// Execution context: the shared configuration and where the command runs.
 #[derive(Clone)]
 pub struct Ctx {
     pub cfg: Arc<Mutex<Config>>,
-    /// true = exécuté dans l'application en cours (console intégrée) ; false = terminal
+    /// true = run inside the running application (built-in console); false = terminal
     pub in_app: bool,
+    /// true = the caller is on the PrintSearch computer itself (terminal, or a loopback / own-address connection);
+    /// false = a client reaching a network listener. Decided from the TCP peer address, never from a header.
+    pub host_local: bool,
+}
+
+/// Tail of every refusal text: "<what> is only available on the PrintSearch computer itself".
+pub const ONLY_HERE: &str = "is only available on the PrintSearch computer itself";
+
+/// Identifiers sent as-is inside an API address: letters, digits, "-" and "_" only.
+pub(crate) fn valid_id(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 64 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// What a client on the network (not on the PrintSearch computer) may NOT do. None = allowed.
+pub fn remote_refusal(cmd: &Cmd) -> Option<&'static str> {
+    match cmd {
+        Cmd::Quit => Some("quitting PrintSearch"),
+        Cmd::Logs { action: Some(LogsAction::Clear), .. } => Some("clearing the log"),
+        Cmd::Logs { action: Some(LogsAction::Export { .. }), .. } => Some("exporting the log to a file on the server"),
+        Cmd::Browser { choice: Some(c) } if !browser::is_known_choice(c) => Some("choosing a custom browser path"),
+        _ => None,
+    }
 }
 
 fn price_text(p: Option<f64>) -> String {
@@ -120,6 +142,12 @@ fn price_text(p: Option<f64>) -> String {
 }
 
 pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
+    if !ctx.host_local {
+        if let Some(what) = remote_refusal(&cmd) {
+            crate::log::log_warn!("refused for a network client: {what}");
+            bail!("{what} {ONLY_HERE}");
+        }
+    }
     match cmd {
         Cmd::Search { query, sites, limit, page, price, sort, min_likes, min_downloads } => {
             let sites = if sites.is_empty() { Site::ALL.to_vec() } else { sites };
@@ -164,7 +192,7 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
             writeln!(out, "Connected to {}.", site.key())?;
         }
         Cmd::Serve { .. } => {
-            writeln!(out, "PrintSearch is already running ({}).", crate::app::URL)?;
+            writeln!(out, "PrintSearch is already running ({}).", crate::app::url())?;
         }
         Cmd::Update => {
             let u = update::check(true).await?;
@@ -193,8 +221,9 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
                 }
             }
             Some(c) => {
+                let c = c.trim().to_string();
                 browser::validate_choice(&c)?;
-                let stored = if c == "auto" { None } else { Some(c.clone()) };
+                let stored = if c.is_empty() || c == "auto" { None } else { Some(c.clone()) };
                 {
                     let mut cfg = ctx.cfg.lock().await;
                     cfg.browser = stored.clone();
@@ -212,6 +241,9 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
             if !site.can_like() {
                 bail!("Like is not available for {}", site.key());
             }
+            if !valid_id(&id) {
+                bail!("invalid model id");
+            }
             let t = ctx.cfg.lock().await.token_for(site).context("not connected: run `login` first")?;
             provider(site).like(&id, &t).await?;
             log_info!("liked {} {id}", site.key());
@@ -220,6 +252,9 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
         Cmd::Collect { site, collection, id } => {
             if !site.can_collect() {
                 bail!("Collections are not available for {}", site.key());
+            }
+            if !valid_id(&collection) || !valid_id(&id) {
+                bail!("invalid id");
             }
             let t = ctx.cfg.lock().await.token_for(site).context("not connected: run `login` first")?;
             provider(site).add_to_collection(&collection, &id, &t).await?;
@@ -249,11 +284,10 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
         },
         Cmd::Status => {
             writeln!(out, "{}", system_info(ctx).await)?;
-            if ctx.in_app {
-                writeln!(out, "Running: yes ({})", crate::app::URL)?;
+            if ctx.in_app || crate::app::probe_async().await.is_some() {
+                writeln!(out, "Running: yes ({})", crate::app::url())?;
             } else {
-                let up = probe_running().await;
-                writeln!(out, "Running: {}", if up { "yes" } else { "no" })?;
+                writeln!(out, "Running: no")?;
             }
         }
         Cmd::Quit => {
@@ -261,10 +295,10 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
                 crate::app::request_quit();
                 writeln!(out, "PrintSearch is closing.")?;
             } else {
-                let r = crate::providers::client().post(format!("{}/api/quit", crate::app::URL)).timeout(Duration::from_secs(5)).send().await;
-                match r {
-                    Ok(resp) if resp.status().is_success() => writeln!(out, "PrintSearch is closing.")?,
-                    _ => writeln!(out, "No running PrintSearch found.")?,
+                if crate::app::local_quit().await {
+                    writeln!(out, "PrintSearch is closing.")?;
+                } else {
+                    writeln!(out, "No running PrintSearch found.")?;
                 }
             }
         }
@@ -272,17 +306,8 @@ pub async fn execute(cmd: Cmd, ctx: &Ctx, out: &mut String) -> Result<()> {
     Ok(())
 }
 
-async fn probe_running() -> bool {
-    crate::providers::client()
-        .get(format!("{}/api/status", crate::app::URL))
-        .timeout(Duration::from_secs(2))
-        .send()
-        .await
-        .map(|r| r.status().is_success())
-        .unwrap_or(false)
-}
 
-/// En-tête de diagnostic (version, système, navigateur, sites connectés…). Ne contient aucun jeton.
+/// Diagnostic header (version, system, browser, connected sites…). Contains no token.
 pub async fn system_info(ctx: &Ctx) -> String {
     let c = ctx.cfg.lock().await.clone();
     let connected: Vec<&str> = Site::ALL.iter().filter(|s| c.token_for(**s).is_some()).map(|s| s.key()).collect();
@@ -304,11 +329,11 @@ pub async fn system_info(ctx: &Ctx) -> String {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Console intégrée : une ligne de texte -> une commande
+// Built-in console: one line of text -> one command
 // ---------------------------------------------------------------------------------------------
 
-/// Découpe une ligne comme un shell simple : espaces, "guillemets doubles" et 'simples'.
-/// Dans "…", seuls \" et \\ sont des échappements (un chemin Windows comme "C:\Users\moi" reste intact).
+/// Splits a line like a simple shell: spaces, "double quotes" and 'single quotes'.
+/// Inside "…", only \" and \\ are escapes (a Windows path such as "C:\Users\me" stays intact).
 pub fn split_args(s: &str) -> Result<Vec<String>, String> {
     let (mut out, mut cur, mut in_tok, mut quote) = (Vec::new(), String::new(), false, None::<char>);
     let mut chars = s.chars().peekable();
@@ -350,7 +375,7 @@ pub fn split_args(s: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
-/// Masque la valeur de --token pour que le jeton n'apparaisse jamais dans le journal.
+/// Hides the value of --token so the token never appears in the log.
 fn redact(args: &[String]) -> String {
     let mut shown = Vec::with_capacity(args.len());
     let mut mask_next = false;
@@ -370,7 +395,7 @@ fn redact(args: &[String]) -> String {
     shown.join(" ")
 }
 
-/// Exécute une ligne de la console et renvoie le texte à afficher.
+/// Runs a console line and returns the text to display.
 pub async fn run_line(ctx: &Ctx, line: &str) -> String {
     let line = line.trim();
     if line.is_empty() {
@@ -383,7 +408,7 @@ pub async fn run_line(ctx: &Ctx, line: &str) -> String {
     log_info!("console: {}", redact(&args));
     let cli = match Cli::try_parse_from(std::iter::once("printsearch".to_string()).chain(args)) {
         Ok(c) => c,
-        Err(e) => return e.render().to_string(), // aide, version ou erreur d'usage
+        Err(e) => return e.render().to_string(), // help, version or usage error
     };
     let Some(cmd) = cli.cmd else {
         return "Type `help` to list the commands.\n".into();
@@ -431,6 +456,38 @@ mod tests {
         assert!(redact(&a).contains("--token ***"));
         let b = sp("login printables --token=SECRET123");
         assert!(!redact(&b).contains("SECRET123"));
+    }
+
+    fn parse(line: &str) -> Cmd {
+        Cli::try_parse_from(std::iter::once("printsearch".to_string()).chain(sp(line))).unwrap().cmd.unwrap()
+    }
+
+    #[test]
+    fn network_clients_are_refused_the_dangerous_commands() {
+        assert!(remote_refusal(&parse("quit")).is_some());
+        assert!(remote_refusal(&parse("logs clear")).is_some());
+        assert!(remote_refusal(&parse("logs export")).is_some());
+        assert!(remote_refusal(&parse("logs export /tmp/x")).is_some());
+        assert!(remote_refusal(&parse("browser /tmp/x")).is_some());
+        assert!(remote_refusal(&parse("browser ../x")).is_some());
+        assert!(remote_refusal(&parse(r"browser C:\Tools\b.exe")).is_some());
+    }
+
+    #[test]
+    fn network_clients_keep_the_harmless_commands() {
+        for l in ["status", "update", "logs", "logs -n 5", "logs path", "browser", "browser auto", "search vase", "serve", "like thingiverse 123"] {
+            assert!(remote_refusal(&parse(l)).is_none(), "{l}");
+        }
+    }
+
+    #[test]
+    fn identifiers_are_checked() {
+        assert!(valid_id("abc-1_2"));
+        assert!(!valid_id(""));
+        assert!(!valid_id("a/b"));
+        assert!(!valid_id("a b"));
+        assert!(!valid_id("../x"));
+        assert!(!valid_id(&"a".repeat(65)));
     }
 
     #[test]

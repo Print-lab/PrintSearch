@@ -1,10 +1,10 @@
-//! Lecture de pages web rendues en JavaScript avec un navigateur Chromium sans interface
-//! (Chrome, Edge, Brave, Vivaldi, Chromium…). Sert aux sites sans API accessible (MakerWorld)
-//! et de repli pour Thingiverse. Le navigateur utilisé se choisit dans les Paramètres.
+//! Reads JavaScript-rendered web pages with a headless Chromium browser
+//! (Chrome, Edge, Brave, Vivaldi, Chromium…). Used for sites without an accessible API (MakerWorld)
+//! and as a fallback for Thingiverse. The browser is chosen in Settings.
 //!
-//! Optimisations : un seul navigateur réutilisé entre les recherches (démarré à l'avance par `serve`),
-//! images/médias désactivés, pas d'attente de l'événement « load », lecture de la page toutes les
-//! 250 ms avec sortie dès que assez de cartes sont là, et cache de 10 min.
+//! Optimizations: a single browser reused across searches (started on the first search that needs it and closed
+//! after 10 minutes without use), images/media disabled, no waiting for the "load" event, page read every
+//! 250 ms, exiting as soon as enough cards are present, and a 10 min cache.
 use crate::log::{log_info, log_warn};
 use anyhow::{anyhow, bail, Context, Result};
 use headless_chrome::{Browser, LaunchOptions, Tab};
@@ -35,7 +35,7 @@ struct Scan {
     text: String,
 }
 
-/// Un navigateur compatible trouvé sur la machine.
+/// A compatible browser found on this machine.
 #[derive(Debug, Clone, Serialize)]
 pub struct Found {
     pub id: String,
@@ -52,10 +52,10 @@ type CacheMap = HashMap<String, (Instant, Vec<Card>, bool)>;
 static BROWSER: Mutex<Option<Arc<Browser>>> = Mutex::new(None);
 static CACHE: Mutex<Option<CacheMap>> = Mutex::new(None);
 static CHOICE: Mutex<Option<String>> = Mutex::new(None);
-/// Dernier échec de lancement (pour ne pas réessayer en boucle pendant quelques secondes).
+/// Last launch failure (to avoid retrying in a loop for a few seconds).
 static FAILED: Mutex<Option<(Instant, String)>> = Mutex::new(None);
-/// Dernier usage du navigateur d'arrière-plan : au bout de 10 min d'inactivité il est fermé (il se relance tout seul
-/// à la prochaine recherche). Une application qui reste des jours dans la barre d'état ne doit pas garder un Chrome ouvert.
+/// Last use of the background browser: after 10 min of inactivity it is closed (it restarts by itself
+/// on the next search). An application that stays for days in the tray must not keep a Chrome open.
 static LAST_USE: Mutex<Option<Instant>> = Mutex::new(None);
 static REAPER: std::sync::Once = std::sync::Once::new();
 const IDLE_CLOSE: Duration = Duration::from_secs(600);
@@ -63,7 +63,7 @@ const LAUNCH_TIMEOUT: Duration = Duration::from_secs(35);
 const RETRY_AFTER_FAILURE: Duration = Duration::from_secs(20);
 
 // ---------------------------------------------------------------------------------------------
-// Détection et choix du navigateur
+// Browser detection and selection
 // ---------------------------------------------------------------------------------------------
 
 fn first_in_path(names: &[&str]) -> Option<PathBuf> {
@@ -75,7 +75,7 @@ fn first_existing(paths: Vec<PathBuf>) -> Option<PathBuf> {
     paths.into_iter().find(|p| p.is_file())
 }
 
-/// Navigateurs basés sur Chromium installés ici, dans l'ordre de préférence du mode automatique.
+/// Chromium-based browsers installed here, in the order of preference of automatic mode.
 pub fn detect() -> Vec<Found> {
     let mut out = vec![];
     let mut add = |id: &str, name: &str, p: Option<PathBuf>| {
@@ -90,7 +90,7 @@ pub fn detect() -> Vec<Found> {
             .collect();
         let find = |rel: &str| first_existing(roots.iter().map(|r| r.join(rel)).collect());
         add("chrome", "Google Chrome", find(r"Google\Chrome\Application\chrome.exe"));
-        add("edge", "Microsoft Edge", find(r"Microsoft\Edge\Application\msedge.exe")); // préinstallé sous Windows
+        add("edge", "Microsoft Edge", find(r"Microsoft\Edge\Application\msedge.exe")); // preinstalled on Windows
         add("brave", "Brave", find(r"BraveSoftware\Brave-Browser\Application\brave.exe"));
         add("vivaldi", "Vivaldi", find(r"Vivaldi\Application\vivaldi.exe"));
         add("chromium", "Chromium", find(r"Chromium\Application\chrome.exe"));
@@ -111,7 +111,7 @@ pub fn detect() -> Vec<Found> {
     out
 }
 
-/// Traduit un choix ("auto", identifiant, ou chemin) en navigateur concret.
+/// Translates a choice ("auto", identifier, or path) into a concrete browser.
 fn resolve(choice: Option<&str>) -> Result<Option<Found>> {
     match choice {
         None | Some("") | Some("auto") => Ok(detect().into_iter().next()),
@@ -120,26 +120,38 @@ fn resolve(choice: Option<&str>) -> Result<Option<Found>> {
                 return Ok(Some(f));
             }
             let p = Path::new(c);
-            if p.is_file() {
+            // Only something that looks like a path can be a custom executable: a bare name (for example a browser id whose
+            // detection fails later) must never resolve to a file of the current directory.
+            if looks_like_path(c) && p.is_file() {
                 let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Custom".into());
                 return Ok(Some(Found { id: "custom".into(), name, path: c.into() }));
             }
-            bail!("Browser « {c} » not found / introuvable")
+            bail!("Browser '{c}' not found")
         }
     }
 }
 
-/// Vérifie qu'un choix est utilisable (sans l'appliquer).
+fn looks_like_path(c: &str) -> bool {
+    c.contains('/') || c.contains('\\')
+}
+
+/// True for "", "auto" or the id of a browser found on this machine: a choice that is never a file path.
+pub fn is_known_choice(choice: &str) -> bool {
+    let c = choice.trim();
+    c.is_empty() || c == "auto" || detect().iter().any(|f| f.id == c)
+}
+
+/// Checks that a choice is usable (without applying it).
 pub fn validate_choice(choice: &str) -> Result<()> {
     resolve(Some(choice)).map(|_| ())
 }
 
-/// Navigateur actuellement retenu (None = aucun trouvé).
+/// Currently selected browser (None = none found).
 pub fn effective(choice: Option<&str>) -> Option<Found> {
     resolve(choice).ok().flatten()
 }
 
-/// Change le navigateur : l'instance en cours est fermée et le cache vidé.
+/// Changes the browser: the running instance is closed and the cache cleared.
 pub fn set_choice(choice: Option<String>) {
     *CHOICE.lock().unwrap_or_else(|e| e.into_inner()) = choice;
     *BROWSER.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -148,10 +160,10 @@ pub fn set_choice(choice: Option<String>) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Lecture des pages
+// Page reading
 // ---------------------------------------------------------------------------------------------
 
-/// Extrait toutes les cartes dont un lien correspond à `__RE__` (1er groupe = id).
+/// Extracts all cards with a link matching `__RE__` (1st group = id).
 const JS: &str = r#"(() => {
   const re = new RegExp(__RE__);
   const map = new Map();
@@ -187,7 +199,7 @@ pub fn page_slice(cards: Vec<Card>, limit: usize, page: usize) -> Vec<Card> {
     cards.into_iter().skip((page.max(1) - 1) * limit).take(limit).collect()
 }
 
-/// Ferme le navigateur d'arrière-plan (à appeler avant de quitter : sinon il resterait en cours d'exécution).
+/// Closes the background browser (call before exiting: otherwise it would keep running).
 pub fn shutdown() {
     if BROWSER.lock().unwrap_or_else(|e| e.into_inner()).take().is_some() {
         log_info!("background browser closed");
@@ -198,7 +210,7 @@ fn touch() {
     *LAST_USE.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
 }
 
-/// Thread de fond qui libère le navigateur inutilisé. Une lecture en cours garde sa propre référence : elle n'est pas coupée.
+/// Background thread that releases the unused browser. A running read keeps its own reference: it is not cut off.
 fn start_reaper() {
     REAPER.call_once(|| {
         let _ = std::thread::Builder::new().name("browser-reaper".into()).spawn(|| loop {
@@ -261,21 +273,18 @@ fn launch() -> Result<Arc<Browser>> {
         .build()
         .map_err(|e| anyhow!("{e}"))?;
 
-    // La bibliothèque lit la sortie du navigateur en bloquant : son délai interne ne suffit pas si le
-    // programme lancé ne répond jamais (mauvais chemin choisi, par exemple). On borne donc l'attente ici.
+    // The library reads the browser output in a blocking way: its internal timeout is not enough if the
+    // launched program never responds (wrong path chosen, for example). So the wait is bounded here.
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let _ = tx.send(Browser::new(opts));
     });
     match rx.recv_timeout(LAUNCH_TIMEOUT) {
         Ok(r) => Ok(Arc::new(r.map(|b| { log_info!("background browser ready in {} ms", started.elapsed().as_millis()); b }).context(
-            "No Chromium-based browser found or it could not start (Chrome, Edge, Brave, Vivaldi, Chromium): pick one in Settings / \
-             Aucun navigateur basé sur Chromium trouvé ou lancement impossible : choisissez-en un dans les Paramètres",
+            "No Chromium-based browser found or it could not start (Chrome, Edge, Brave, Vivaldi, Chromium): pick one in Settings",
         )?)),
         Err(_) => bail!(
-            "The browser did not start within {} s. Is it really a Chromium-based browser? Pick another one in Settings / \
-             Le navigateur ne démarre pas (délai de {} s dépassé). Est-ce bien un navigateur basé sur Chromium ? Choisissez-en un autre dans les Paramètres",
-            LAUNCH_TIMEOUT.as_secs(),
+            "The browser did not start within {} s. Is it really a Chromium-based browser? Pick another one in Settings",
             LAUNCH_TIMEOUT.as_secs()
         ),
     }
@@ -292,7 +301,7 @@ fn cache_put(url: &str, cards: &[Card], exhausted: bool) {
     let map = g.get_or_insert_with(HashMap::new);
     map.retain(|_, (t, _, _)| t.elapsed() < CACHE_TTL);
     while map.len() >= CACHE_MAX {
-        // le cache ne grossit pas indéfiniment : on retire l'entrée la plus ancienne
+        // keep the cache from growing indefinitely: remove the oldest entry
         match map.iter().min_by_key(|(_, (t, _, _))| *t).map(|(k, _)| k.clone()) {
             Some(k) => map.remove(&k),
             None => break,
@@ -301,19 +310,19 @@ fn cache_put(url: &str, cards: &[Card], exhausted: bool) {
     map.insert(url.to_string(), (Instant::now(), cards.to_vec(), exhausted));
 }
 
-/// Charge `url`, fait défiler la page jusqu'à avoir `needed` cartes (ou plus rien de nouveau).
+/// Loads `url`, scrolls the page until `needed` cards are found (or nothing new appears).
 pub async fn scrape_cards(url: String, id_re: &'static str, needed: usize) -> Result<Vec<Card>> {
-    // Au plus MAX_TABS lectures simultanées : plusieurs sites sont lus par le même navigateur, et ouvrir
-    // une dizaine d'onglets d'un coup le ralentirait pour tout le monde. Les autres attendent leur tour.
+    // At most MAX_TABS simultaneous reads: several sites are read by the same browser, and opening a dozen
+    // tabs at once would slow it down for everybody. The others wait for their turn.
     static TABS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(MAX_TABS);
     let job = async {
         let _permit = TABS.acquire().await?;
         tokio::task::spawn_blocking(move || scrape_blocking(&url, id_re, needed)).await?
     };
-    // Garde-fou global : une lecture (attente comprise) ne peut jamais bloquer la recherche plus de 150 s
+    // Global safeguard: a read (waiting included) can never block the search for more than 150 s
     match tokio::time::timeout(Duration::from_secs(150), job).await {
         Ok(r) => r,
-        Err(_) => bail!("page reading timed out / lecture de la page trop longue"),
+        Err(_) => bail!("page reading timed out"),
     }
 }
 
@@ -323,7 +332,7 @@ fn scrape_blocking(url: &str, id_re: &str, needed: usize) -> Result<Vec<Card>> {
     }
     let browser = browser()?;
     let tab = browser.new_tab()?;
-    tab.set_default_timeout(Duration::from_secs(10)); // aucun appel au navigateur ne reste bloqué longtemps
+    tab.set_default_timeout(Duration::from_secs(10)); // no browser call stays blocked for long
     let _ = tab.set_user_agent(UA, None, None);
     let js = JS.replace("__RE__", &serde_json::to_string(id_re)?);
     let result = poll(&tab, url, &js, needed);
@@ -335,7 +344,7 @@ fn scrape_blocking(url: &str, id_re: &str, needed: usize) -> Result<Vec<Card>> {
 }
 
 fn poll(tab: &Arc<Tab>, url: &str, js: &str, needed: usize) -> Result<(Vec<Card>, bool)> {
-    tab.navigate_to(url)?; // pas d'attente de « load » : on lit la page au fil de son rendu
+    tab.navigate_to(url)?; // no waiting for "load": the page is read as it renders
     let start = Instant::now();
     let (mut cards, mut stagnant, mut diag) = (Vec::<Card>::new(), 0u32, String::new());
     let mut exhausted = false;
@@ -351,7 +360,7 @@ fn poll(tab: &Arc<Tab>, url: &str, js: &str, needed: usize) -> Result<(Vec<Card>
             .unwrap_or_default();
 
         if scan.cards.is_empty() {
-            diag = format!("titre « {} », début du texte : « {} »", scan.title, scan.text);
+            diag = format!("title '{}', start of text: '{}'", scan.title, scan.text);
             continue;
         }
         stagnant = if scan.cards.len() > cards.len() { 0 } else { stagnant + 1 };
@@ -360,13 +369,37 @@ fn poll(tab: &Arc<Tab>, url: &str, js: &str, needed: usize) -> Result<(Vec<Card>
             break;
         }
         if stagnant >= 12 {
-            exhausted = true; // ~3 s sans nouvelle carte après défilement : fin des résultats
+            exhausted = true; // ~3 s without a new card after scrolling: end of results
             break;
         }
         let _ = tab.evaluate("window.scrollTo(0, document.body.scrollHeight)", false);
     }
     if cards.is_empty() {
-        bail!("aucun résultat lu après {} s — {}", start.elapsed().as_secs(), diag);
+        bail!("no result read after {} s — {}", start.elapsed().as_secs(), diag);
     }
     Ok((cards, exhausted))
+}
+
+#[cfg(test)]
+mod choice_tests {
+    use super::*;
+
+    #[test]
+    fn known_choices_are_never_paths() {
+        assert!(is_known_choice(""));
+        assert!(is_known_choice("auto"));
+        assert!(is_known_choice("  auto  "));
+        assert!(!is_known_choice("/tmp/fake"));
+        assert!(!is_known_choice("../browser"));
+        assert!(!is_known_choice(r"C:\Tools\browser.exe"));
+    }
+
+    #[test]
+    fn bare_names_are_not_paths() {
+        assert!(!looks_like_path("chromium"));
+        assert!(!looks_like_path("chrome.exe"));
+        assert!(looks_like_path("./chromium"));
+        assert!(looks_like_path("/usr/bin/chromium"));
+        assert!(looks_like_path(r"C:\x\chrome.exe"));
+    }
 }

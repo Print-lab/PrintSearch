@@ -1,4 +1,4 @@
-//! Recherche multi-sites + filtres, partagée par le CLI et l'interface web.
+//! Multi-site search + filters, shared by the CLI and the web interface.
 use crate::config::Config;
 use crate::log::{log_info, log_warn};
 use crate::providers::{provider, Model, Site};
@@ -33,7 +33,7 @@ pub struct Filters {
 
 pub struct Outcome {
     pub results: Vec<Model>,
-    /// Nombre de résultats reçus des sites avant filtrage (0 = plus rien à charger)
+    /// Number of results received from the sites before filtering (0 = nothing left to load)
     pub raw: usize,
     pub errors: BTreeMap<String, String>,
 }
@@ -45,12 +45,12 @@ fn keep(m: &Model, f: &Filters) -> bool {
         PriceFilter::Paid if !paid => return false,
         _ => {}
     }
-    // Une donnée inconnue (None) ne fait pas exclure le modèle.
+    // Unknown data (None) does not exclude the model.
     m.likes.map_or(true, |l| l >= f.min_likes) && m.downloads.map_or(true, |d| d >= f.min_downloads)
 }
 
 pub async fn search_all(cfg: &Config, sites: &[Site], query: &str, limit: usize, page: usize, f: &Filters) -> Outcome {
-    let shown: String = query.chars().take(120).collect(); // pour le journal : jamais de ligne démesurée
+    let shown: String = query.chars().take(120).collect(); // for the log: never an oversized line
     let tasks = sites.iter().map(|&s| {
         let tok = cfg.token_for(s);
         let q = query.to_string();
@@ -77,7 +77,7 @@ pub async fn search_all(cfg: &Config, sites: &[Site], query: &str, limit: usize,
     }
     let raw = lists.iter().map(Vec::len).sum();
 
-    // Entrelacement : un résultat de chaque site à tour de rôle.
+    // Interleaving: one result from each site in turn.
     let mut merged = vec![];
     for i in 0..lists.iter().map(Vec::len).max().unwrap_or(0) {
         for l in &lists {

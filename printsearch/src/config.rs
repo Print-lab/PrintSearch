@@ -3,21 +3,21 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
-/// Réglages enregistrés : jetons par site ("thingiverse", "printables", "makerworld"; les autres sites n'ont pas de compte)
-/// et navigateur utilisé pour la lecture des pages ("auto", un identifiant ou un chemin).
+/// Saved settings: tokens per site ("thingiverse", "printables", "makerworld"; the other sites have no account)
+/// and the browser used to read pages ("auto", an identifier or a path).
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Config {
     #[serde(default)]
     pub tokens: BTreeMap<String, String>,
     #[serde(default)]
     pub browser: Option<String>,
-    /// Langue de l'interface ("en" ou "fr"), utilisée pour le menu de l'icône de la barre d'état
+    /// Interface language ("en", "de" or "fr"), used for the tray icon menu
     #[serde(default)]
     pub lang: Option<String>,
 }
 
 fn path() -> Result<PathBuf> {
-    let dirs = ProjectDirs::from("dev", "printsearch", "printsearch").context("dossier de config introuvable")?;
+    let dirs = ProjectDirs::from("dev", "printsearch", "printsearch").context("config folder not found")?;
     fs::create_dir_all(dirs.config_dir())?;
     Ok(dirs.config_dir().join("config.json"))
 }
@@ -31,8 +31,8 @@ impl Config {
         })
     }
 
-    /// Charge la configuration. Un fichier illisible ou corrompu est mis de côté (`config.json.bad`)
-    /// et l'application démarre avec une configuration vide, au lieu de refuser de démarrer.
+    /// Loads the configuration. An unreadable or corrupt file is set aside (`config.json.bad`)
+    /// and the application starts with an empty configuration instead of refusing to start.
     pub fn load() -> Self {
         let Ok(p) = path() else { return Self::default() };
         if !p.exists() {
@@ -49,7 +49,7 @@ impl Config {
         }
     }
 
-    /// Écriture atomique (fichier temporaire puis renommage) : pas de config à moitié écrite.
+    /// Atomic write (temporary file, then rename): no half-written config.
     pub fn save(&self) -> Result<()> {
         let p = path()?;
         let tmp = p.with_extension("json.tmp");
@@ -57,7 +57,7 @@ impl Config {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?; // jetons = secrets
+            fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?; // tokens = secrets
         }
         fs::rename(&tmp, &p)?;
         Ok(())

@@ -17,8 +17,8 @@ Une petite application Rust avec une interface web locale et un mode ligne de co
 - Filtres : **sites, prix (gratuit / payant), tri (pertinence / likes / téléchargements), likes minimum, téléchargements minimum, résultats par site**. Changer un filtre relance la recherche automatiquement.
 - **Charger plus de résultats** (pagination) et petit cache pour que les recherches répétées soient rapides.
 - **Like** et **ajout à une collection** depuis les cartes de résultats (voir [fonctionnalités par site](#fonctionnalités-par-site)).
-- **Historique de recherche** sous la barre de recherche (désactivable) et **choix de la langue** (anglais par défaut, français disponible).
-- Strictement local : le serveur n'écoute que sur `127.0.0.1` et refuse les requêtes qui ne viennent pas de `localhost:8787` (protection contre les pages web malveillantes) ; vos jetons ne quittent pas votre ordinateur.
+- **Historique de recherche** sous la barre de recherche (désactivable) et **choix de la langue** (anglais par défaut ; français et allemand disponibles).
+- Local par défaut : le serveur n'écoute que sur `127.0.0.1` et refuse les requêtes qui ne viennent pas de `localhost:8787` (protection contre les pages web malveillantes) ; vos jetons ne quittent pas votre ordinateur. Voir [Accéder depuis une autre machine](#accéder-depuis-une-autre-machine-facultatif) pour une configuration réseau facultative.
 - **Tourne en arrière-plan, sans fenêtre de terminal :** une **icône dans la barre d'état** (Windows) / zone de notification (Linux) ouvre l'interface, la console ou ferme l'application.
 - Une **console** intégrée (⚙ Paramètres → Paramètres avancés) qui accepte les mêmes commandes que le terminal, et une **commande `logs`** pour afficher ou exporter le journal de l'application (rapports de bug).
 - **Vérification des mises à jour** auprès de ce dépôt GitHub (Paramètres, ligne de commande, et une discrète notification au démarrage que vous pouvez désactiver). Rien n'est téléchargé ni installé automatiquement.
@@ -57,10 +57,49 @@ sudo apt install ./target/debian/printsearch_*_amd64.deb
 
 Le paquet *recommande* un navigateur basé sur Chromium (Chromium, Chrome, Edge ou Brave), donc `apt` proposera d'en installer un. Après l'installation, « PrintSearch » apparaît dans le menu des applications et la commande `printsearch` est disponible dans le terminal. Avant de distribuer le paquet, renseignez `maintainer` dans `Cargo.toml`.
 
+### Serveur Linux sans écran (systemd)
+
+Sur une machine sans écran, lancez PrintSearch comme service. L'icône de la barre d'état n'y sert à rien : démarrez avec `serve --no-tray`.
+
+```bash
+sudo apt install git curl build-essential chromium      # Ubuntu : chromium-browser
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+git clone https://github.com/Print-lab/PrintSearch.git && cd PrintSearch/printsearch
+cargo build --release
+```
+
+Une unité systemd utilisateur (`~/.config/systemd/user/printsearch.service`) :
+
+```ini
+[Unit]
+Description=PrintSearch
+
+[Service]
+ExecStart=%h/PrintSearch/printsearch/target/release/printsearch serve --no-tray
+Restart=on-failure
+# only for network access, see below:
+#Environment=PRINTSEARCH_BIND=192.168.1.20
+#Environment=PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now printsearch
+sudo loginctl enable-linger "$USER"      # continue de tourner après la déconnexion
+```
+
+- Le journal est `~/.local/share/printsearch/logs/printsearch.log` ; `printsearch logs` l'affiche.
+- Les commandes `printsearch status` et `printsearch quit` doivent s'exécuter avec le même environnement (par exemple le même `PRINTSEARCH_BIND`) que le service.
+- Une seule instance tourne par utilisateur.
+- Pour atteindre l'interface depuis une autre machine, voir [Accéder depuis une autre machine](#accéder-depuis-une-autre-machine-facultatif).
+
 ### Exécutable Windows
 
 L'`.exe` embarque l'icône de l'application. 
-Compilez sous Windows avec `cargo build --release`, puis copiez `target\release\printsearch.exe` où vous voulez. Une fenêtre de console reste ouverte pendant l'utilisation : la fermer arrête le serveur. SmartScreen ou le pare-feu peuvent afficher une alerte au premier lancement (le serveur n'écoute qu'en local, vous pouvez autoriser).
+Compilez sous Windows avec `cargo build --release`, puis copiez `target\release\printsearch.exe` où vous voulez. L'application tourne sans fenêtre de console : utilisez son icône de la barre d'état ou `printsearch quit` pour l'arrêter. SmartScreen ou le pare-feu peuvent afficher une alerte au premier lancement (le serveur n'écoute qu'en local, vous pouvez autoriser).
 
 ### Compiler l'`.exe` Windows depuis Linux
 
@@ -111,7 +150,7 @@ Tapez une recherche et validez avec Entrée. Les filtres sont sous la barre de r
 
 ### Console et commandes
 
-**⚙ Paramètres → Paramètres avancés → Ouvrir la console** ouvre dans l'application une page de type terminal. Elle exécute **les mêmes commandes que le terminal** : tapez `help` pour les lister. `↑`/`↓` parcourent l'historique, `Tab` complète, `clear` efface l'écran, `lang en|fr` change la langue. Une commande contenant un jeton n'est jamais gardée dans l'historique et est masquée à l'écran et dans le journal.
+**⚙ Paramètres → Paramètres avancés → Ouvrir la console** ouvre dans l'application une page de type terminal. Elle exécute **les mêmes commandes que le terminal** : tapez `help` pour les lister. `↑`/`↓` parcourent l'historique, `Tab` complète, `clear` efface l'écran, `lang en|de|fr` change la langue. Une commande contenant un jeton n'est jamais gardée dans l'historique et est masquée à l'écran et dans le journal.
 
 ### Ligne de commande
 
@@ -136,6 +175,22 @@ printsearch --version
 Tout cela fonctionne aussi dans la console de l'application. Sous **Windows**, le programme n'a pas de fenêtre de console propre : lancé depuis un terminal, il s'y rattache et affiche son résultat, mais l'invite peut revenir avant la sortie (utilisez `printsearch.exe ... | more`, ou PowerShell, pour attendre).
 
 `-l/--limit` est le nombre de résultats *par site* et *par page* ; `--page` commence à 1.
+
+### Accéder depuis une autre machine (facultatif)
+
+Par défaut, PrintSearch n'écoute que sur `127.0.0.1`. Pour l'utiliser depuis un autre ordinateur (par exemple un serveur sans écran), définissez deux variables d'environnement **avant de le démarrer** (dans l'unité systemd avec des lignes `Environment=`, dans un shell avec `export`) :
+
+```bash
+export PRINTSEARCH_BIND=192.168.1.20            # adresse d'écoute ; 0.0.0.0 ou :: = toutes les interfaces
+export PRINTSEARCH_ALLOWED_HOSTS=192.168.1.20   # noms/adresses que les navigateurs peuvent utiliser, séparés par des virgules
+```
+
+- Écrivez les noms d'hôte en minuscules, sans port et sans `http://`. Seul `http` simple est pris en charge.
+- Avec une écoute générale (`0.0.0.0`, `::`), l'adresse affichée est `localhost`.
+- La connexion est en **HTTP simple, sans authentification** : toute personne qui atteint le port peut chercher et utiliser vos comptes connectés. Ne l'utilisez que sur un réseau de confiance, ou derrière un pare-feu / VPN.
+- PrintSearch refuse ces actions aux clients qui ne sont pas sur l'ordinateur de PrintSearch lui-même : un chemin de navigateur personnalisé, `logs export` et `logs clear`, `quit`, et la connexion OAuth de Thingiverse. Pour récupérer le journal depuis une autre machine, utilisez le bouton **Télécharger les journaux** de l'interface.
+- Une requête est locale si elle vient de la boucle locale ou d'une adresse de la même machine. Cela inclut les autres utilisateurs de cet ordinateur, un tunnel SSH et un proxy inverse sur la même machine : ils sont aussi fiables que l'ordinateur lui-même.
+- La redirection OAuth de Thingiverse est fixée à `http://localhost:8787/callback`. Avec une écoute sur une adresse du réseau local, rien n'écoute sur `localhost:8787` : redirigez le port (`ssh -L 8787:<IP-du-serveur>:8787 <serveur>`) et ouvrez `http://localhost:8787` via le tunnel. Ou utilisez plutôt un App Token Thingiverse, qui fonctionne de partout.
 
 ### Choisir le navigateur utilisé pour les recherches
 
@@ -205,7 +260,7 @@ Dans un fichier `config.json` du dossier de configuration de l'application (typi
 
 ## Journaux et rapports de bug
 
-PrintSearch tient un journal de ce qu'il fait (recherches, erreurs, démarrage du navigateur, mises à jour). Il **ne contient jamais vos jetons**, mais il contient vos termes de recherche et reste sur votre ordinateur. Emplacement : `~/.local/share/printsearch/logs/` sous Linux, `%LOCALAPPDATA%\printsearch\printsearch\data\logs\` sous Windows (`printsearch logs path` l'affiche). Il est limité à environ 2 Mo (une rotation).
+PrintSearch tient un journal de ce qu'il fait (recherches, erreurs, démarrage du navigateur, mises à jour). Il **ne contient jamais vos jetons**, mais il contient aussi vos termes de recherche, des chemins de fichiers et les sites connectés, et reste sur votre ordinateur. Emplacement : `~/.local/share/printsearch/logs/` sous Linux, `%LOCALAPPDATA%\printsearch\printsearch\data\logs\` sous Windows (`printsearch logs path` l'affiche). Il est limité à environ 2 Mo (une rotation).
 
 ```bash
 printsearch logs                  # 50 dernières lignes
@@ -247,7 +302,6 @@ Quand une valeur est inconnue (par exemple les likes sur MakerWorld), les filtre
 - **Port 8787 utilisé** par un autre programme : le port est fixe (la redirection OAuth de Thingiverse en dépend). Fermez ce programme. (Lancer PrintSearch deux fois ne pose pas de problème : le second lancement ouvre simplement le premier.)
 - **« limite de requêtes GitHub atteinte »** (vérification des mises à jour) : GitHub limite les appels anonymes à son API par adresse IP. L'application se rabat alors sur la page publique des releases ; si les deux échouent, réessayez plus tard.
 - **« invalid peer certificate » / erreurs TLS** derrière un proxy d'entreprise ou un antivirus qui inspecte le HTTPS : l'application utilise le magasin de certificats du système, installez-y le certificat racine de votre organisation.
-- **Les messages d'erreur du serveur sont en français** pour l'instant ; l'interface, elle, est entièrement traduite.
 
 ## Limites et mentions légales
 

@@ -1,15 +1,15 @@
-//! Sites sans API publique utilisable sans compte (Thangs, Cults, MyMiniFactory) : on lit leur page de
-//! résultats avec le navigateur d'arrière-plan (voir browser.rs), comme pour MakerWorld.
-//! Seuls le titre, l'image et le lien sont lus (pas d'auteur, de likes ni de prix).
-//! ⚠ Adresses de recherche et formes des liens non officielles : elles peuvent changer sans préavis.
+//! Sites without a public API usable without an account (Thangs, Cults, MyMiniFactory): their results page is
+//! read with the background browser (see browser.rs), as for MakerWorld.
+//! Only the title, the picture and the link are read (no author, likes or price).
+//! ⚠ Search addresses and link shapes are unofficial: they can change without notice.
 use super::*;
 use crate::browser;
 
 pub struct WebSite {
     site: Site,
-    /// Adresse de la page de résultats pour une recherche (déjà encodée)
+    /// Address of the results page for a search (already encoded)
     search_url: fn(&str) -> String,
-    /// Reconnaît un lien de modèle ; le 1er groupe de capture est l'identifiant
+    /// Recognises a model link; the 1st capture group is the identifier
     id_re: &'static str,
 }
 
@@ -26,7 +26,7 @@ pub fn cults3d() -> WebSite {
     WebSite {
         site: Site::Cults3d,
         search_url: |q| format!("https://cults3d.com/en/search?q={}", urlencoding::encode(q)),
-        // https://cults3d.com/en/3d-model/<catégorie>/<nom> : l'identifiant est « catégorie/nom »
+        // https://cults3d.com/en/3d-model/<category>/<name> : the identifier is "category/name"
         id_re: r"/3d-model/([^/?#]+/[^/?#]+)",
     }
 }

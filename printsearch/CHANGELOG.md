@@ -5,6 +5,16 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **German interface** (Settings, console `lang en|de|fr`; the tray menu follows it).
+- **Optional network access:** `PRINTSEARCH_BIND` (address to listen on) and `PRINTSEARCH_ALLOWED_HOSTS` (host names accepted in the `Host`/`Origin` headers). The default stays `127.0.0.1`. Clients that are not on the PrintSearch computer cannot set a custom browser path, run `logs export`, `logs clear` or `quit`, or start the Thingiverse OAuth flow.
+- README sections *Headless Linux server (systemd)* and *Access from another machine*.
+
+### Changed
+- The README no longer says that server error messages are in French; the French source comments and messages were translated to English.
+
 ## [0.3.0] - 2026-11-22
 
 ### Added

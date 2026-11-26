@@ -1,6 +1,6 @@
-//! MakerWorld n'a pas d'API publique et bloque les requêtes HTTP « nues » (protection anti-bot).
-//! On lit donc la page de recherche avec un Chrome piloté (voir browser.rs) : Chrome/Chromium
-//! doit être installé. Likes/téléchargements/prix ne sont pas lus dans ce mode.
+//! MakerWorld has no public API and blocks "bare" HTTP requests (anti-bot protection).
+//! So the search page is read with a driven Chrome (see browser.rs): Chrome/Chromium
+//! must be installed. Likes/downloads/price are not read in this mode.
 use super::*;
 use crate::browser;
 
@@ -32,5 +32,5 @@ impl Provider for MakerWorld {
             })
             .collect())
     }
-    // like / collections : à implémenter après inspection des appels réseau du site connecté.
+    // like / collections: to be implemented after inspecting the network calls of the logged-in site.
 }

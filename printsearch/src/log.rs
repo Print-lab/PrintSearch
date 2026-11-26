@@ -1,6 +1,6 @@
-//! Journal de l'application : fichier (avec rotation) + écho sur le terminal quand il y en a un.
-//! Il sert au diagnostic : commande `logs`, console de l'application, export pour un rapport de bug.
-//! Le journal contient les recherches effectuées et les erreurs ; il ne contient jamais de jeton.
+//! Application log: file (with rotation) + echo on the terminal when there is one.
+//! It serves diagnostics: the `logs` command, the application console, export for a bug report.
+//! The log contains the searches made and the errors; it never contains a token.
 use directories::{ProjectDirs, UserDirs};
 use serde::Deserialize;
 use std::{
@@ -37,8 +37,8 @@ impl Level {
     }
 }
 
-const FILE_MAX: u64 = 1_000_000; // au-delà : rotation (printsearch.log -> printsearch.log.1)
-const RING_MAX: usize = 1000; // secours si le fichier est inutilisable
+const FILE_MAX: u64 = 1_000_000; // beyond that: rotation (printsearch.log -> printsearch.log.1)
+const RING_MAX: usize = 1000; // fallback when the file is unusable
 const TS_LEN: usize = 20; // "2026-11-21 09:27:00Z"
 
 struct Logger {
@@ -71,13 +71,13 @@ fn rotated_path() -> Option<PathBuf> {
     dir().map(|d| d.join("printsearch.log.1"))
 }
 
-/// Active ou coupe l'écho du journal sur le terminal (utile quand le programme affiche lui-même ses messages).
+/// Turns the log echo on the terminal on or off (useful when the program prints its own messages).
 #[cfg(all(unix, has_tray))]
 pub fn set_echo(on: bool) {
     lock().echo = on;
 }
 
-/// À appeler une fois au démarrage.
+/// Call once at startup.
 pub fn init() {
     let mut g = lock();
     g.echo = std::io::stderr().is_terminal();
@@ -104,7 +104,7 @@ pub fn write(level: Level, msg: &str) {
         g.file = None;
         open_file(&mut g);
         if g.size > FILE_MAX {
-            // la rotation n'a pas pu avoir lieu : on repart d'un fichier neuf plutôt que de grossir sans fin
+            // the rotation could not happen: start a fresh file rather than grow without end
             if let Some(p) = file_path() {
                 let _ = fs::write(p, b"");
             }
@@ -123,14 +123,14 @@ pub fn write(level: Level, msg: &str) {
         }
         g.ring.push_back(line.clone());
     }
-    drop(g); // un terminal bloqué ne doit pas empêcher les autres threads de journaliser
+    drop(g); // a blocked terminal must not stop the other threads from logging
     if echo {
-        // Pas de `eprintln!` : il panique si le terminal vient d'être fermé, ce qui arrêterait le programme brutalement.
+        // No `eprintln!`: it panics if the terminal has just been closed, which would stop the program abruptly.
         let _ = writeln!(std::io::stderr(), "{line}");
     }
 }
 
-/// Installe un gestionnaire de plantage : sans fenêtre de terminal, une erreur fatale serait invisible.
+/// Installs a crash handler: without a terminal window, a fatal error would be invisible.
 pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         write(Level::Error, &format!("panic: {info}"));
@@ -161,7 +161,7 @@ fn filter_lines(text: &str, n: usize, min: Level) -> Vec<String> {
     all[all.len().saturating_sub(n)..].iter().map(|s| s.to_string()).collect()
 }
 
-/// Les `n` dernières lignes (niveau `min` ou plus grave), toutes sessions confondues.
+/// The last `n` lines (level `min` or more severe), all sessions together.
 pub fn tail(n: usize, min: Level) -> Vec<String> {
     filter_lines(&read_all(), n, min)
 }
@@ -175,7 +175,7 @@ pub fn clear() {
     g.size = 0;
 }
 
-/// Texte complet à exporter : en-tête de diagnostic puis tout le journal.
+/// Full text to export: diagnostic header, then the whole log.
 pub fn export_text(header: &str) -> String {
     format!("{header}\n{}\n{}", "-".repeat(72), read_all())
 }
@@ -184,7 +184,7 @@ pub fn stamp_for_filename() -> String {
     timestamp().replace(['-', ':'], "").replace(' ', "-").replace('Z', "")
 }
 
-/// Écrit l'export dans `dest` (ou, par défaut, le dossier Téléchargements, sinon le dossier du journal).
+/// Writes the export to `dest` (or, by default, the Downloads folder, otherwise the log folder).
 pub fn export_to(dest: Option<PathBuf>, header: &str) -> std::io::Result<PathBuf> {
     let path = dest.unwrap_or_else(|| {
         let base = UserDirs::new().and_then(|u| u.download_dir().map(|d| d.to_path_buf())).filter(|d| d.is_dir()).or_else(dir).unwrap_or_else(|| PathBuf::from("."));
@@ -206,14 +206,14 @@ fn timestamp() -> String {
     format_utc(secs)
 }
 
-/// Secondes Unix -> "AAAA-MM-JJ HH:MM:SSZ" (UTC), sans dépendance externe.
+/// Unix seconds -> "YYYY-MM-DD HH:MM:SSZ" (UTC), without an external dependency.
 fn format_utc(secs: u64) -> String {
     let (days, rem) = ((secs / 86_400) as i64, secs % 86_400);
     let (y, m, d) = civil_from_days(days);
     format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}Z", rem / 3600, (rem % 3600) / 60, rem % 60)
 }
 
-// Algorithme de Howard Hinnant (« civil_from_days »).
+// Howard Hinnant's algorithm ("civil_from_days").
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
@@ -235,7 +235,7 @@ mod tests {
     fn formats_known_timestamps() {
         assert_eq!(format_utc(0), "1970-01-01 00:00:00Z");
         assert_eq!(format_utc(1_700_000_000), "2023-11-14 22:13:20Z");
-        assert_eq!(format_utc(951_782_400), "2000-02-29 00:00:00Z"); // année bissextile
+        assert_eq!(format_utc(951_782_400), "2000-02-29 00:00:00Z"); // leap year
         assert_eq!(format_utc(1_795_000_000).len(), TS_LEN);
     }
 

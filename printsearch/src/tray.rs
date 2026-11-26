@@ -1,7 +1,7 @@
-//! Icône de la barre d'état (Windows) / zone de notification (Linux, protocole StatusNotifierItem).
-//! Clic gauche : ouvre l'interface. Clic droit : menu (Ouvrir, Quitter).
-//! Sous Linux, l'icône n'apparaît que si votre bureau affiche les icônes de notification
-//! (KDE, XFCE, Cinnamon… ; GNOME demande l'extension « AppIndicator »).
+//! Tray icon (Windows) / notification area (Linux, StatusNotifierItem protocol).
+//! Left click: opens the interface. Right click: menu (Open, Quit).
+//! On Linux the icon only appears if your desktop shows notification icons
+//! (KDE, XFCE, Cinnamon…; GNOME needs the "AppIndicator" extension).
 use anyhow::{anyhow, Result};
 use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
@@ -16,29 +16,42 @@ const ICON_RGBA: &[u8] = include_bytes!("../packaging/tray-64.rgba"); // 64x64, 
 static STOP: AtomicBool = AtomicBool::new(false);
 static LAST_OPEN_MS: AtomicU64 = AtomicU64::new(0);
 
-/// Demande à `run` de se terminer (appelé quand le serveur s'arrête).
+/// Asks `run` to finish (called when the server stops).
 pub fn stop() {
     STOP.store(true, Ordering::SeqCst);
 }
 
 fn labels(lang: &str) -> (&'static str, &'static str) {
-    if lang == "fr" {
-        ("Ouvrir PrintSearch", "Quitter")
-    } else {
-        ("Open PrintSearch", "Quit")
+    match lang {
+        "fr" => ("Ouvrir PrintSearch", "Quitter"),
+        "de" => ("PrintSearch öffnen", "Beenden"),
+        _ => ("Open PrintSearch", "Quit"),
     }
 }
 
-/// Ouvre l'interface dans le navigateur (au plus une fois par seconde : un double-clic envoie deux clics).
+#[cfg(test)]
+mod labels_tests {
+    use super::labels;
+
+    #[test]
+    fn labels_de() {
+        assert_eq!(labels("de"), ("PrintSearch öffnen", "Beenden"));
+        assert_eq!(labels("fr").1, "Quitter");
+        assert_eq!(labels("en").1, "Quit");
+        assert_eq!(labels("xx").1, "Quit");
+    }
+}
+
+/// Opens the interface in the browser (at most once per second: a double click sends two clicks).
 fn open_ui() {
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
     if now.saturating_sub(LAST_OPEN_MS.swap(now, Ordering::SeqCst)) < 1000 {
         return;
     }
-    let _ = open::that(crate::app::URL);
+    let _ = open::that(crate::app::url());
 }
 
-/// Crée l'icône puis bloque jusqu'à `stop()`. Renvoie une erreur si l'icône ne peut pas être créée.
+/// Creates the icon, then blocks until `stop()`. Returns an error if the icon cannot be created.
 pub fn run(lang: &str) -> Result<()> {
     let (l_open, l_quit) = labels(lang);
     let menu = Menu::new();
@@ -74,7 +87,7 @@ pub fn run(lang: &str) -> Result<()> {
     Ok(())
 }
 
-/// Windows : l'icône vit dans la boucle de messages de ce thread, qu'il faut donc faire tourner.
+/// Windows: the icon lives in this thread's message loop, which therefore has to be run.
 #[cfg(windows)]
 fn wait_for_stop() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{DispatchMessageW, MsgWaitForMultipleObjects, PeekMessageW, TranslateMessage, MSG, PM_REMOVE, QS_ALLINPUT, WM_QUIT};
@@ -96,7 +109,7 @@ fn wait_for_stop() {
     }
 }
 
-/// Linux : le service D-Bus de l'icône tourne dans son propre thread ; il suffit d'attendre.
+/// Linux: the icon's D-Bus service runs in its own thread; it is enough to wait.
 #[cfg(not(windows))]
 fn wait_for_stop() {
     while !STOP.load(Ordering::SeqCst) {

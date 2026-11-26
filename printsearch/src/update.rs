@@ -1,6 +1,6 @@
-//! Vérification des mises à jour auprès de GitHub (API publique, sans authentification).
-//! On regarde d'abord la dernière *release* publiée ; s'il n'y en a pas, le plus haut *tag* de version.
-//! Rien n'est téléchargé ni installé : on compare simplement les numéros de version.
+//! Update check against GitHub (public API, no authentication).
+//! The latest published *release* is looked at first; if there is none, the highest version *tag*.
+//! Nothing is downloaded or installed: the version numbers are simply compared.
 use crate::log::{log_info, log_warn};
 use anyhow::{bail, Result};
 use serde::Serialize;
@@ -18,10 +18,10 @@ static CACHE: Mutex<Option<(Instant, UpdateInfo)>> = Mutex::new(None);
 #[derive(Serialize, Clone, Debug)]
 pub struct UpdateInfo {
     pub current: String,
-    /// Dernière version publiée (None = aucune release ni tag sur GitHub)
+    /// Latest published version (None = no release or tag on GitHub)
     pub latest: Option<String>,
     pub update_available: bool,
-    /// Page de la release (construite ici, jamais reprise telle quelle de la réponse GitHub)
+    /// Release page (built here, never taken as-is from the GitHub response)
     pub url: String,
     pub notes: Option<String>,
     pub published_at: Option<String>,
@@ -31,7 +31,7 @@ pub fn current() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
-/// "v1.2.3-rc1+build" -> ([1,2,3], true)   (true = version préliminaire)
+/// "v1.2.3-rc1+build" -> ([1,2,3], true)   (true = pre-release)
 fn parse(v: &str) -> Option<(Vec<u64>, bool)> {
     let v = v.trim().trim_start_matches(['v', 'V']);
     let v = v.split('+').next()?;
@@ -53,7 +53,7 @@ fn cmp_versions(a: &str, b: &str) -> Ordering {
             let n = x.len().max(y.len()).max(3);
             x.resize(n, 0);
             y.resize(n, 0);
-            x.cmp(&y).then_with(|| yp.cmp(&xp)) // à numéro égal, une version finale > une préliminaire
+            x.cmp(&y).then_with(|| yp.cmp(&xp)) // with an equal number, a final version > a pre-release
         }
         _ => Ordering::Equal,
     }
@@ -72,7 +72,7 @@ async fn get(path: &str) -> Result<(u16, Value)> {
         .await?;
     let status = resp.status().as_u16();
     if status == 403 || status == 429 {
-        bail!("GitHub rate limit reached, try again later / limite de requêtes GitHub atteinte, réessayez plus tard");
+        bail!("GitHub rate limit reached, try again later");
     }
     let body = resp.json::<Value>().await.unwrap_or(Value::Null);
     Ok((status, body))
@@ -86,7 +86,7 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Via l'API GitHub : numéro de version, notes de version, date de publication.
+/// Via the GitHub API: version number, release notes, publication date.
 async fn fetch_api() -> Result<(Option<String>, Option<String>, Option<String>)> {
     let (status, v) = get("releases/latest").await?;
     Ok(match status {
@@ -96,22 +96,22 @@ async fn fetch_api() -> Result<(Option<String>, Option<String>, Option<String>)>
             v["published_at"].as_str().map(String::from),
         ),
         404 => {
-            // Aucune release publiée : on prend le plus haut tag de version.
+            // No release published: take the highest version tag.
             let (st, tags) = get("tags?per_page=50").await?;
             if st != 200 {
-                bail!("GitHub answered HTTP {st} / GitHub a répondu HTTP {st}");
+                bail!("GitHub answered HTTP {st}");
             }
             let best = tags
                 .as_array()
                 .and_then(|a| a.iter().filter_map(|t| t["name"].as_str()).filter(|n| parse(n).is_some()).max_by(|a, b| cmp_versions(a, b)).map(String::from));
             (best, None, None)
         }
-        s => bail!("GitHub answered HTTP {s} / GitHub a répondu HTTP {s}"),
+        s => bail!("GitHub answered HTTP {s}"),
     })
 }
 
-/// Repli sans l'API (donc sans sa limite de requêtes) : la page web `releases/latest` redirige vers
-/// `.../releases/tag/<version>`. On lit seulement cette redirection, sans la suivre.
+/// Fallback without the API (so without its rate limit): the web page `releases/latest` redirects to
+/// `.../releases/tag/<version>`. Only that redirect is read, without following it.
 async fn latest_from_redirect() -> Result<Option<String>> {
     let client = reqwest::Client::builder()
         .user_agent(concat!("printsearch/", env!("CARGO_PKG_VERSION"), " (+personal tool)"))
@@ -132,7 +132,7 @@ async fn latest_from_redirect() -> Result<Option<String>> {
 async fn fetch() -> Result<UpdateInfo> {
     let (tag, notes, published_at) = match fetch_api().await {
         Ok(r) => r,
-        // L'API a échoué (limite de requêtes, réseau filtré…) : on essaie la page web.
+        // The API failed (rate limit, filtered network…): try the web page.
         Err(api_err) => {
             log_warn!("update check: GitHub API failed ({api_err:#}); trying the public releases page");
             match latest_from_redirect().await {
@@ -161,7 +161,7 @@ async fn fetch() -> Result<UpdateInfo> {
     })
 }
 
-/// `force` = ignorer le cache d'une heure (bouton « Rechercher des mises à jour »).
+/// `force` = ignore the one-hour cache ("Check for updates" button).
 pub async fn check(force: bool) -> Result<UpdateInfo> {
     if !force {
         if let Some((t, info)) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
