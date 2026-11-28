@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=PrintSearch
+Comment=Search 3D models on Thingiverse, Printables, MakerWorld, Thangs, Cults and MyMiniFactory
+Exec=printsearch
+Icon=printsearch
+Categories=Utility;
+Terminal=false

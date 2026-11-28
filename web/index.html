@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrintSearch</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b1f24;--muted:#6a7480;--line:#e2e6ea;--accent:#2f6fed;--ok:#1f9d55;--bad:#d64545;--heart:#e0245e;
+--tv:#248bcc;--pr:#f96831;--mw:#00ae42;--ease:cubic-bezier(.2,.8,.2,1)}
+@media(prefers-color-scheme:dark){:root{--bg:#14171a;--card:#1d2125;--text:#e8ebee;--muted:#9099a3;--line:#2b3138;--accent:#6b9bff}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--text)}
+
+/* ---------- Search area: centered at first, moves up after the first search ---------- */
+.stage{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 20px;border-bottom:1px solid var(--line);
+  min-height:0;display:flex;flex-direction:column;justify-content:center;
+  transition:min-height .75s var(--ease),padding .75s var(--ease),border-color .5s}
+body.hero .stage{min-height:100vh;padding:24px 20px;border-bottom-color:transparent}
+.stage-inner{width:100%;max-width:1200px;margin:0 auto;transition:max-width .75s var(--ease)}
+body.hero .stage-inner{max-width:700px}
+.brand{margin:0 0 10px;font-size:18px;cursor:pointer;user-select:none;transition:font-size .75s var(--ease),margin .75s var(--ease)}
+body.hero .brand{font-size:46px;text-align:center;margin-bottom:6px;animation:rise .8s var(--ease) backwards}
+.tagline{color:var(--muted);text-align:center;font-size:15px;max-height:0;opacity:0;overflow:hidden;margin:0;
+  transition:max-height .5s var(--ease),opacity .4s,margin .5s}
+body.hero .tagline{max-height:40px;opacity:1;margin:0 0 22px;animation:rise .8s .1s var(--ease) backwards}
+form{display:flex;gap:8px;align-items:center}
+body.hero form{animation:rise .8s .2s var(--ease) backwards}
+input[type=search]{flex:1;min-width:0;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);
+  color:var(--text);font-size:15px;outline:none;transition:padding .75s var(--ease),font-size .75s var(--ease),box-shadow .25s,border-color .25s}
+body.hero input[type=search]{padding:16px 20px;font-size:18px;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08)}
+input[type=search]:focus{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 22%,transparent)}
+button{padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);cursor:pointer;
+  font-size:14px;transition:transform .15s,box-shadow .2s,background-color .2s,border-color .2s,color .2s}
+button:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+button:active:not(:disabled){transform:scale(.96)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;padding:10px 18px}
+body.hero button.primary{padding:16px 24px;font-size:16px;border-radius:16px}
+button:disabled{opacity:.6;cursor:default}
+button.loading::after{content:'';display:inline-block;width:12px;height:12px;margin-left:8px;vertical-align:-2px;
+  border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:rot .7s linear infinite}
+.filters{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;align-items:center;color:var(--muted);font-size:13px}
+body.hero .filters{justify-content:center}
+.filters.extra{animation:fade .6s .1s backwards}
+select,input[type=number]{padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--text);font-size:13px;
+  transition:border-color .2s,box-shadow .2s}
+select:focus,input[type=number]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.site-chip{display:inline-flex;align-items:center;gap:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--bad);transition:background-color .4s}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.link{border:none;background:none;color:var(--accent);padding:0;font-size:13px;cursor:pointer;text-decoration:underline;box-shadow:none!important;transform:none!important}
+
+/* ---------- Results ---------- */
+main{padding:20px;max-width:1240px;margin:0 auto}
+body.hero main{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;
+  animation:rise .55s var(--ease) backwards;animation-delay:calc(var(--i,0) * 45ms);
+  transition:transform .25s var(--ease),box-shadow .25s,border-color .25s}
+.card.seen{animation:none}
+.card:hover{transform:translateY(-5px);box-shadow:0 14px 30px rgba(0,0,0,.14);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.thumbwrap{position:relative;aspect-ratio:4/3;background:var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:34px}
+.thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s,transform .6s var(--ease)}
+.thumb.loaded{opacity:1}
+.card:hover .thumb{transform:scale(1.07)}
+.body{padding:12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.badge{align-self:flex-start;display:inline-flex;align-items:center;font-size:12px;font-weight:600;padding:3px 11px 3px 4px;border-radius:99px;background:var(--bg);border:1px solid var(--line)}
+.sico{width:22px;height:22px;object-fit:contain;border-radius:6px;vertical-align:-6px;margin-right:6px;flex:none}
+.sico.s-makerworld,.sico.s-thangs{background:#14171a;padding:3px;box-shadow:inset 0 0 0 1px rgba(128,128,128,.4)}
+.sites{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.site-opt{display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:var(--text)}
+.site-opt .sico{margin:0 2px 0 0;vertical-align:0}
+.badge .sico{margin-right:7px;vertical-align:0}
+.title{font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.meta{color:var(--muted);font-size:13px}
+.price{font-size:12px;font-weight:600}
+.actions{display:flex;gap:6px;margin-top:auto;padding-top:8px;flex-wrap:wrap}
+.actions button,.actions a{font-size:13px;padding:5px 10px}
+.actions a{border:1px solid var(--line);border-radius:10px;color:var(--text);text-decoration:none;transition:background-color .2s,transform .15s}
+.actions a:hover{background:var(--line)}
+.actions a:active{transform:scale(.96)}
+.heart{display:inline-block}
+button.liked{color:var(--heart);border-color:var(--heart)}
+button.liked .heart{animation:pop .45s var(--ease)}
+button.shake{animation:shake .4s}
+
+.skel{aspect-ratio:3/4.1;border-radius:14px;border:1px solid var(--line);
+  background:linear-gradient(90deg,var(--card) 25%,var(--line) 50%,var(--card) 75%);background-size:200% 100%;
+  animation:shimmer 1.3s linear infinite,fade .4s backwards}
+
+.msg{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;background:var(--card);border:1px solid var(--line);animation:rise .4s var(--ease) backwards}
+.msg.err{border-color:var(--bad);color:var(--bad)}
+.msg a{color:var(--accent);font-weight:600}
+#status{color:var(--muted);margin-bottom:12px;min-height:1.4em;transition:opacity .3s}
+#moreWrap{text-align:center;margin:22px 0 10px}
+#toast{position:fixed;bottom:24px;left:50%;transform:translate(-50%,20px);background:var(--text);color:var(--bg);padding:10px 16px;
+  border-radius:10px;opacity:0;transition:opacity .25s,transform .35s var(--ease);pointer-events:none;max-width:90vw;z-index:20}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+.gear{position:fixed;top:14px;right:16px;z-index:30;padding:6px 11px;font-size:18px;line-height:1;border-radius:12px}
+.gear:hover:not(:disabled){transform:rotate(60deg)}
+body.view-settings .gear,body.view-settings .stage,body.view-settings main,body.view-advanced .gear,body.view-advanced .stage,body.view-advanced main,body.view-console .gear,body.view-console .stage,body.view-console main{display:none}
+.settings{display:none;padding:28px 20px}
+body.view-settings #settings,body.view-advanced #advanced{display:block;animation:rise .5s var(--ease)}
+.settings-inner{max-width:760px;margin:0 auto}
+.settings h2{margin:18px 0 6px;font-size:26px}
+.scard{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0;animation:rise .5s var(--ease) backwards;animation-delay:calc(var(--i,0) * 70ms)}
+.shead{display:flex;align-items:center;gap:8px;font-size:16px}
+.shead .sico{margin:0}
+.state{margin-left:auto;font-size:12px;padding:2px 10px;border-radius:99px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.state.on{color:var(--ok);border-color:var(--ok)}
+.hint{color:var(--muted);font-size:13px;margin:8px 0 12px}
+.srow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.srow input[type=password],.srow input[type=text]{flex:1;min-width:220px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--text);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.srow input[type=password]:focus,.srow input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+body.view-settings .settings button.primary,body.view-advanced .settings button.primary{padding:8px 14px;font-size:14px;border-radius:10px}
+.searchbox{position:relative;flex:1;min-width:0}
+.searchbox input[type=search]{width:100%}
+.hist{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:40;background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 16px 36px rgba(0,0,0,.2);overflow:hidden;animation:fade .15s;text-align:left;font-size:14px}
+.hist[hidden]{display:none}
+.hhead{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.hitem{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;transition:background-color .15s}
+.hitem:hover,.hitem.active{background:var(--bg)}
+.htext{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hx{padding:2px 7px;border:none;background:none;color:var(--muted);font-size:12px}
+.hx:hover:not(:disabled){color:var(--bad);transform:none;box-shadow:none}
+.settings h3{margin:28px 0 0;font-size:18px}
+.ubanner{position:fixed;right:16px;bottom:16px;z-index:25;display:flex;align-items:center;gap:10px;background:var(--card);
+  border:1px solid var(--accent);border-radius:12px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.2);font-size:14px;
+  max-width:calc(100vw - 32px);animation:rise .5s var(--ease)}
+.ubanner[hidden]{display:none}
+.ubanner a{color:var(--accent);font-weight:600}
+.ubanner button{padding:2px 8px;border:none;background:none;color:var(--muted)}
+.notes{white-space:pre-wrap;max-height:180px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;
+  padding:10px;margin:10px 0 0;font:12px/1.5 ui-monospace,monospace;color:var(--text)}
+.btnlink{display:inline-block;padding:8px 14px;border:1px solid var(--line);border-radius:10px;color:var(--text);text-decoration:none;font-size:14px;background:var(--card);transition:background-color .2s,transform .15s}
+.btnlink:hover{background:var(--line)}
+.btnlink:active{transform:scale(.96)}
+.termhead .btnlink{margin-left:auto}
+.consoleview{display:none;padding:28px 20px}
+body.view-console .consoleview{display:block;animation:rise .5s var(--ease)}
+.consoleview .inner{max-width:920px;margin:0 auto}
+.term{margin-top:12px;background:#0f1214;color:#d6dde3;border:1px solid var(--line);border-radius:12px;padding:12px;height:min(60vh,640px);overflow:auto;
+  font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.tline{white-space:pre-wrap;overflow-wrap:anywhere}
+.tline.cmd{color:#7fb2ff;margin-top:8px}
+.tline.err{color:#ff8f8f}
+.tline.dim{color:#8b96a0}
+.termin{display:flex;gap:8px;align-items:center;margin-top:10px}
+.termin .prompt{font:700 16px ui-monospace,Menlo,Consolas,monospace;color:var(--accent)}
+.termin input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);
+  font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;outline:none;transition:border-color .2s,box-shadow .2s}
+.termin input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
+.closed{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:20px}
+.closed[hidden]{display:none}
+@keyframes rise{from{opacity:0;transform:translateY(18px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes shimmer{to{background-position:-200% 0}}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.5)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body class="hero">
+<button id="gear" class="gear" type="button" data-i18n-title="settings">⚙</button>
+<header class="stage">
+  <div class="stage-inner">
+    <h1 class="brand" id="brand">🔎 PrintSearch</h1>
+    <p class="tagline" data-i18n="tagline"></p>
+    <form id="f">
+      <div class="searchbox">
+        <input type="search" id="q" data-i18n-placeholder="placeholder" autofocus autocomplete="off">
+        <div id="hist" class="hist" hidden></div>
+      </div>
+      <button class="primary" id="go" data-i18n="search"></button>
+    </form>
+    <div class="filters extra">
+      <div class="sites" id="filters"></div>
+      <label><span data-i18n="price"></span> <select id="price"><option value="" data-i18n="all"></option><option value="free" data-i18n="free"></option><option value="paid" data-i18n="paid"></option></select></label>
+      <label><span data-i18n="sort"></span> <select id="sort"><option value="" data-i18n="relevance"></option><option value="likes" data-i18n="likes"></option><option value="downloads" data-i18n="downloads"></option></select></label>
+      <label><span data-i18n="minLikes"></span> <input type="number" id="minlikes" min="0" placeholder="0" style="width:80px"></label>
+      <label><span data-i18n="minDl"></span> <input type="number" id="mindl" min="0" placeholder="0" style="width:90px"></label>
+      <label><span data-i18n="perSite"></span> <select id="limit"><option>6</option><option selected>12</option><option>24</option><option>50</option><option>100</option></select></label>
+    </div>
+  </div>
+</header>
+<main>
+  <div id="errors"></div>
+  <div id="status"></div>
+  <div class="grid" id="grid"></div>
+  <div id="moreWrap"><button id="more" style="display:none" data-i18n="loadMore"></button></div>
+</main>
+<section id="settings" class="settings">
+  <div class="settings-inner">
+    <button type="button" class="backbtn" data-i18n="back"></button>
+    <h2 data-i18n="settings"></h2>
+    <p class="meta" data-i18n="settingsIntro"></p>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="general"></strong></div>
+      <div class="srow" style="margin-top:12px">
+        <label><span data-i18n="language"></span> <select id="langSel"><option value="en">English</option><option value="fr">Français</option><option value="de">Deutsch</option></select></label>
+      </div>
+      <div class="srow" style="margin-top:14px">
+        <label class="site-opt"><input type="checkbox" id="histOn"> <span data-i18n="historyLabel"></span></label>
+        <button type="button" id="clearHist" data-i18n="clearHistory"></button>
+      </div>
+      <p class="hint" style="margin-bottom:0" data-i18n="historyHint"></p>
+    </div>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="browserTitle"></strong><span class="state" id="browserState"></span></div>
+      <p class="hint" data-i18n="browserHint"></p>
+      <div class="srow">
+        <select id="browserSel"></select>
+        <input type="text" id="browserPath" hidden data-i18n-placeholder="browserPathPh" autocomplete="off" spellcheck="false">
+        <button type="button" class="primary" id="browserSave" data-i18n="save"></button>
+      </div>
+      <p class="hint" id="browserInfo" style="margin:10px 0 0;overflow-wrap:anywhere"></p>
+    </div>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="updatesTitle"></strong><span class="state" id="appVersion"></span></div>
+      <div class="srow" style="margin-top:12px">
+        <button type="button" id="updateCheck" data-i18n="updateCheck"></button>
+        <label class="site-opt"><input type="checkbox" id="updateAuto"> <span data-i18n="updateAuto"></span></label>
+      </div>
+      <div id="updateInfo" class="hint" style="margin:12px 0 0;overflow-wrap:anywhere"></div>
+      <p class="hint" style="margin-bottom:0" data-i18n="updateHint"></p>
+    </div>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="appTitle"></strong></div>
+      <p class="hint" data-i18n="appHint"></p>
+      <div class="srow">
+        <button type="button" id="quitApp" data-i18n="quitApp"></button>
+      </div>
+    </div>
+    <h3 data-i18n="connections"></h3>
+    <div id="siteSettings"></div>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="advancedTitle"></strong></div>
+      <p class="hint" data-i18n="advancedIntro"></p>
+      <div class="srow"><button type="button" id="advancedBtn" data-i18n="advancedOpen"></button></div>
+    </div>
+  </div>
+</section>
+<section id="advanced" class="settings">
+  <div class="settings-inner">
+    <button type="button" class="backbtn" data-back="parametres" data-i18n="backSettings"></button>
+    <h2 data-i18n="advancedTitle"></h2>
+    <p class="meta" data-i18n="advancedHint"></p>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="terminalTitle"></strong></div>
+      <p class="hint" data-i18n="terminalHint"></p>
+      <div class="srow"><button type="button" class="primary" id="openConsole" data-i18n="openConsole"></button></div>
+    </div>
+    <div class="scard">
+      <div class="shead"><strong data-i18n="logsTitle"></strong></div>
+      <p class="hint" data-i18n="logsHint"></p>
+      <div class="srow"><a class="btnlink" href="/api/logs/export" download data-i18n="downloadLogs"></a></div>
+    </div>
+  </div>
+</section>
+<section id="consoleView" class="consoleview">
+  <div class="inner">
+    <div class="termhead">
+      <button type="button" class="backbtn" data-back="parametres-avances" data-i18n="backAdvanced"></button>
+      <h2 data-i18n="consoleTitle" style="margin:0"></h2>
+      <a class="btnlink" href="/api/logs/export" download data-i18n="downloadLogs"></a>
+    </div>
+    <p class="meta" data-i18n="consoleHint"></p>
+    <div id="termOut" class="term" tabindex="-1"></div>
+    <div class="termin"><span class="prompt">›</span><input id="termIn" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" data-i18n-placeholder="consolePlaceholder"></div>
+  </div>
+</section>
+<div id="closed" class="closed" hidden>
+  <h2 data-i18n="closedTitle" style="margin:0"></h2>
+  <p class="meta" data-i18n="closedHint"></p>
+</div>
+<div id="updateBanner" class="ubanner" hidden>
+  <span id="ubText"></span> <a id="ubLink" target="_blank" rel="noopener noreferrer"></a>
+  <button type="button" id="ubClose" data-i18n-title="dismiss">✕</button>
+</div>
+<div id="toast"></div>
+<script>
+const SITES = {thingiverse:'Thingiverse', printables:'Printables', makerworld:'MakerWorld', thangs:'Thangs', cults3d:'Cults', myminifactory:'MyMiniFactory'};
+const CONNECTABLE = ['thingiverse','printables','makerworld','cults3d','myminifactory'];             // sites where credentials can be saved
+const CAPS = {thingiverse:{like:true, collect:true}, printables:{like:true}};  // actions really available per site
+const $ = s => document.querySelector(s);
+let connected = {}, oauthOk = false;
+let page = 1, lastQ = '', total = 0, seq = 0, ctrl = null, timer = null, toastTimer = null;
+
+function toast(t){
+  const e=$('#toast'); e.textContent=t; e.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>e.classList.remove('show'),2500);
+}
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const txt = await r.text();
+  if(!r.ok) throw new Error(txt || r.statusText);
+  return txt ? JSON.parse(txt) : {};
+}
+const post = (p,b) => api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+
+// DOM building: append(string) = text, never HTML (titles come from third-party sites).
+function el(tag, props={}, ...kids){
+  const e = document.createElement(tag);
+  for(const [k,v] of Object.entries(props)){
+    if(k==='class') e.className=v; else if(k.startsWith('on')) e.addEventListener(k.slice(2),v); else e.setAttribute(k,v);
+  }
+  kids.flat().forEach(k => e.append(k));
+  return e;
+}
+
+
+// ---------- Stockage local (navigateur) : langue et historique ----------
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const I18N = {
+  en: {
+    tagline:"One search for Thingiverse, Printables, MakerWorld, Thangs, Cults and MyMiniFactory",
+    placeholder:"Search 3D models (benchy, headphone stand…)",
+    search:"Search",
+    price:"Price",
+    all:"All",
+    free:"Free",
+    paid:"Paid",
+    sort:"Sort",
+    relevance:"Relevance",
+    likes:"Likes",
+    downloads:"Downloads",
+    minLikes:"Min likes",
+    minDl:"Min downloads",
+    perSite:"Per site",
+    loadMore:"Load more results",
+    settings:"Settings",
+    back:"← Back to search",
+    settingsIntro:"Tokens are stored on this computer only, in the application's configuration folder. Language and history are stored in this browser.",
+    general:"General",
+    language:"Language",
+    historyLabel:"Search history",
+    historyHint:"Shows your recent searches under the search bar. Turning it off stops recording and hides them; use “Clear history” to delete them.",
+    clearHistory:"Clear history",
+    historyCleared:"History cleared",
+    connections:"Site connections",
+    connected:"Connected",
+    notConnected:"Not connected",
+    disconnect:"Disconnect",
+    connectTv:"Connect with Thingiverse",
+    saveToken:"Save token",
+    tokenApp:"App Token",
+    tokenBearer:"Bearer token",
+    toastConnected:"Connected ✓",
+    toastDisconnected:"Disconnected",
+    hint_thingiverse:"Without a connection, search reads the website with a browser running in the background (slower, no author or likes). With a token, it uses the API: faster, with author, likes and downloads. The token is required for Like and collections. Get an “App Token” at thingiverse.com/developers.",
+    hint_printables:"Search works without a connection. A Bearer token is required for Like: sign in on the website, open the developer tools (F12), Network tab, and copy the value after “Authorization: Bearer” from a request to api.printables.com.",
+    hint_makerworld:"Search works without a connection (needs a Chromium-based browser: Chrome, Edge, Brave…). Like and collections are not available for MakerWorld yet: the token is kept for later and has no effect for now.",
+    like:"Like",
+    liked:"Liked",
+    collection:"＋ Collection",
+    open:"Open ↗",
+    paidP:"💰 Paid ({p})",
+    toastLiked:"Liked ✓",
+    toastAdded:"Added ✓",
+    promptCollection:"Collection ID:",
+    loadingSites:"Searching… {done}/{total} sites done ({n} results so far)",
+    browserTitle:"Browser used for searches",
+    browserAuto:"Automatic (first one found)",
+    browserCustom:"Custom path…",
+    browserPathPh:"Full path to the browser executable",
+    save:"Save",
+    browserNone:"No compatible browser found",
+    browserUsing:"In use: {name} — {path}",
+    browserSaved:"Browser saved ✓",
+    browserHint:"MakerWorld, Thangs, and Thingiverse without a token, are read with a Chromium-based browser running in the background (Chrome, Edge, Brave, Vivaldi, Chromium). Edge is already installed on Windows, so you may not need to install anything. Firefox and Safari are not supported.",
+    results:"{n} result(s) shown",
+    none:"No results for these criteria.",
+    pickSite:"Select at least one site.",
+    searchOnlyTitle:"Search-only site",
+    searchOnlyHint:"Thangs is searched without an account, using the browser running in the background (a Chromium-based browser is needed). Only the title, picture and link are read, so there is nothing to connect, and Like and collections are not available for it.",
+    updatesTitle:"Updates",
+    updateCheck:"Check for updates",
+    updateChecking:"Checking…",
+    updateAuto:"Check automatically at startup",
+    updateVersion:"Version {v}",
+    updateUpToDate:"You are up to date (version {v}).",
+    updateAvailable:"Version {v} is available (you have {c}).",
+    updateView:"View release",
+    updateNoRelease:"No release published on GitHub yet.",
+    updateError:"Could not check for updates: {e}",
+    updateBanner:"Update available: {v}",
+    dismiss:"Dismiss",
+    updateHint:"Contacts GitHub to read the latest published version; nothing is downloaded or installed. To update: from source, run “git pull” then “cargo build --release”; on Debian/Ubuntu, download the new .deb from the release page and run “sudo apt install ./file.deb”; on Windows, replace printsearch.exe.",
+    consoleTitle:"Console",
+    downloadLogs:"Download logs",
+    consoleHint:"Type commands here, like in a terminal: “help” lists them (search, logs, browser, update, status, quit…). Tab completes, ↑/↓ browse your history.",
+    consolePlaceholder:"Type a command… (help)",
+    consoleLocalHelp:"Console-only commands:\n  clear            Clear the screen\n  lang <en|fr|de>  Change the interface language",
+    appTitle:"Application",
+    quitApp:"Quit PrintSearch",
+    quitConfirm:"Quit PrintSearch? The tray icon and the background server will stop.",
+    appHint:"PrintSearch keeps running in the background: look for its icon in the system tray. You can quit it here, from the tray menu, or with “printsearch quit” in a terminal.",
+    advancedTitle:"Advanced settings",
+    advancedOpen:"Open advanced settings →",
+    advancedIntro:"Console (terminal) and logs, for troubleshooting and power users.",
+    advancedHint:"Tools for troubleshooting and for people who like the command line. You do not need them for everyday use.",
+    terminalTitle:"Terminal (console)",
+    openConsole:"Open the console",
+    terminalHint:"Run the same commands as in a terminal (search, logs, browser, status, update…) without leaving the app. Type “help” to list them.",
+    logsTitle:"Logs",
+    logsHint:"The log helps to report a problem. It contains your searches and errors but never your tokens: read it before sharing it. In a terminal, “printsearch logs” shows it.",
+    backSettings:"← Back to settings",
+    backAdvanced:"← Back to advanced settings",
+    closedTitle:"PrintSearch has been closed",
+    closedHint:"You can close this tab. Start PrintSearch again from your applications menu.",
+    recent:"Recent searches",
+    clearAll:"Clear all",
+    remove:"Remove",
+    cultsUser:"Cults username",
+    apiKey:"API key",
+    openSettings:"Open Settings",
+    needKey:"To search {sites}, add an API key in Settings.",
+    hint_cults3d:"Cults is protected by a bot check that blocks automated browsing, so PrintSearch uses Cults' official API. Create a free API key in your Cults account (cults3d.com/en/api/keys), then enter your Cults username and the key here. Search only: Like and collections are not available.",
+    hint_myminifactory:"MyMiniFactory blocks automated browsing and asks apps to use its official API, so a free API key is needed: create one for an application in your MyMiniFactory account (myminifactory.com/pages/for-developers) and paste it here. This integration could not be tested with a real key when it was written: if you get an error, please report the message. Search only."
+  },
+  fr: {
+    tagline:"Une seule recherche pour Thingiverse, Printables, MakerWorld, Thangs, Cults et MyMiniFactory",
+    placeholder:"Rechercher un modèle 3D (benchy, support casque…)",
+    search:"Rechercher",
+    price:"Prix",
+    all:"Tous",
+    free:"Gratuit",
+    paid:"Payant",
+    sort:"Tri",
+    relevance:"Pertinence",
+    likes:"Likes",
+    downloads:"Téléchargements",
+    minLikes:"Likes min",
+    minDl:"Téléch. min",
+    perSite:"Par site",
+    loadMore:"Charger plus de résultats",
+    settings:"Paramètres",
+    back:"← Retour à la recherche",
+    settingsIntro:"Les jetons restent enregistrés sur cet ordinateur uniquement, dans le dossier de configuration de l'application. La langue et l'historique sont enregistrés dans ce navigateur.",
+    general:"Général",
+    language:"Langue",
+    historyLabel:"Historique de recherche",
+    historyHint:"Affiche vos recherches récentes sous la barre de recherche. Le désactiver arrête l'enregistrement et les masque ; utilisez « Effacer l'historique » pour les supprimer.",
+    clearHistory:"Effacer l'historique",
+    historyCleared:"Historique effacé",
+    connections:"Connexion aux sites",
+    connected:"Connecté",
+    notConnected:"Non connecté",
+    disconnect:"Se déconnecter",
+    connectTv:"Se connecter avec Thingiverse",
+    saveToken:"Enregistrer le jeton",
+    tokenApp:"App Token",
+    tokenBearer:"Jeton Bearer",
+    toastConnected:"Connecté ✓",
+    toastDisconnected:"Déconnecté",
+    hint_thingiverse:"Sans connexion, la recherche lit le site avec un navigateur en arrière-plan (plus lent, sans auteur ni likes). Avec un jeton, elle passe par l'API : plus rapide, avec auteur, likes et téléchargements. Le jeton est nécessaire pour Like et les collections. Récupérez un « App Token » sur thingiverse.com/developers.",
+    hint_printables:"La recherche fonctionne sans connexion. Un jeton Bearer est nécessaire pour Like : connectez-vous sur le site, ouvrez les outils de développement (F12), onglet Réseau, et copiez la valeur après « Authorization: Bearer » d'une requête vers api.printables.com.",
+    hint_makerworld:"La recherche fonctionne sans connexion (navigateur basé sur Chromium requis : Chrome, Edge, Brave…). Like et collections ne sont pas encore disponibles pour MakerWorld : le jeton est conservé pour plus tard, sans effet pour l'instant.",
+    like:"Like",
+    liked:"Liké",
+    collection:"＋ Collection",
+    open:"Ouvrir ↗",
+    paidP:"💰 Payant ({p})",
+    toastLiked:"Liké ✓",
+    toastAdded:"Ajouté ✓",
+    promptCollection:"ID de la collection :",
+    loadingSites:"Recherche… {done}/{total} sites terminés ({n} résultats pour l'instant)",
+    browserTitle:"Navigateur utilisé pour les recherches",
+    browserAuto:"Automatique (le premier trouvé)",
+    browserCustom:"Chemin personnalisé…",
+    browserPathPh:"Chemin complet de l'exécutable du navigateur",
+    save:"Enregistrer",
+    browserNone:"Aucun navigateur compatible trouvé",
+    browserUsing:"Utilisé : {name} — {path}",
+    browserSaved:"Navigateur enregistré ✓",
+    browserHint:"MakerWorld, Thangs et Thingiverse sans jeton sont lus avec un navigateur basé sur Chromium qui tourne en arrière-plan (Chrome, Edge, Brave, Vivaldi, Chromium). Edge est déjà installé sous Windows : il n'y a peut-être rien à installer. Firefox et Safari ne sont pas pris en charge.",
+    results:"{n} résultat(s) affichés",
+    none:"Aucun résultat avec ces critères.",
+    pickSite:"Sélectionnez au moins un site.",
+    searchOnlyTitle:"Site en recherche seule",
+    searchOnlyHint:"Thangs se recherche sans compte, avec le navigateur qui tourne en arrière-plan (un navigateur basé sur Chromium est nécessaire). Seuls le titre, l'image et le lien sont lus : il n'y a donc rien à connecter, et Like et les collections ne sont pas disponibles.",
+    updatesTitle:"Mises à jour",
+    updateCheck:"Rechercher des mises à jour",
+    updateChecking:"Vérification…",
+    updateAuto:"Vérifier automatiquement au démarrage",
+    updateVersion:"Version {v}",
+    updateUpToDate:"Vous êtes à jour (version {v}).",
+    updateAvailable:"La version {v} est disponible (vous avez la {c}).",
+    updateView:"Voir la version",
+    updateNoRelease:"Aucune version publiée sur GitHub pour l'instant.",
+    updateError:"Vérification impossible : {e}",
+    updateBanner:"Mise à jour disponible : {v}",
+    dismiss:"Ignorer",
+    updateHint:"Interroge GitHub pour lire la dernière version publiée ; rien n'est téléchargé ni installé. Pour mettre à jour : depuis les sources, lancez « git pull » puis « cargo build --release » ; sous Debian/Ubuntu, téléchargez le nouveau .deb depuis la page de la version et lancez « sudo apt install ./fichier.deb » ; sous Windows, remplacez printsearch.exe.",
+    consoleTitle:"Console",
+    downloadLogs:"Télécharger les journaux",
+    consoleHint:"Tapez des commandes ici, comme dans un terminal : « help » les liste (search, logs, browser, update, status, quit…). Tab complète, ↑/↓ parcourent l'historique.",
+    consolePlaceholder:"Tapez une commande… (help)",
+    consoleLocalHelp:"Commandes propres à la console :\n  clear            Efface l'écran\n  lang <en|fr|de>  Change la langue de l'interface",
+    appTitle:"Application",
+    quitApp:"Quitter PrintSearch",
+    quitConfirm:"Quitter PrintSearch ? L'icône de la barre d'état et le serveur en arrière-plan s'arrêteront.",
+    appHint:"PrintSearch continue de tourner en arrière-plan : cherchez son icône dans la barre d'état. Vous pouvez le quitter ici, depuis le menu de l'icône, ou avec « printsearch quit » dans un terminal.",
+    advancedTitle:"Paramètres avancés",
+    advancedOpen:"Ouvrir les paramètres avancés →",
+    advancedIntro:"Console (terminal) et journaux, pour le dépannage et les utilisateurs avancés.",
+    advancedHint:"Des outils de dépannage, pour ceux qui aiment la ligne de commande. Vous n'en avez pas besoin au quotidien.",
+    terminalTitle:"Terminal (console)",
+    openConsole:"Ouvrir la console",
+    terminalHint:"Exécutez les mêmes commandes que dans un terminal (search, logs, browser, status, update…) sans quitter l'application. Tapez « help » pour les lister.",
+    logsTitle:"Journaux",
+    logsHint:"Le journal aide à signaler un problème. Il contient vos recherches et les erreurs mais jamais vos jetons : relisez-le avant de le partager. Dans un terminal, « printsearch logs » l'affiche.",
+    backSettings:"← Retour aux paramètres",
+    backAdvanced:"← Retour aux paramètres avancés",
+    closedTitle:"PrintSearch est fermé",
+    closedHint:"Vous pouvez fermer cet onglet. Relancez PrintSearch depuis le menu des applications.",
+    recent:"Recherches récentes",
+    clearAll:"Tout effacer",
+    remove:"Supprimer",
+    cultsUser:"Nom d'utilisateur Cults",
+    apiKey:"Clé d'API",
+    openSettings:"Ouvrir les Paramètres",
+    needKey:"Pour rechercher sur {sites}, ajoutez une clé d'API dans les Paramètres.",
+    hint_cults3d:"Cults est protégé par un contrôle anti-robot qui bloque la navigation automatisée : PrintSearch utilise donc l'API officielle de Cults. Créez une clé d'API gratuite dans votre compte Cults (cults3d.com/en/api/keys), puis saisissez ici votre nom d'utilisateur Cults et la clé. Recherche seulement : Like et les collections ne sont pas disponibles.",
+    hint_myminifactory:"MyMiniFactory bloque la navigation automatisée et demande aux applications d'utiliser son API officielle : une clé d'API gratuite est donc nécessaire. Créez-en une pour une application dans votre compte MyMiniFactory (myminifactory.com/pages/for-developers) et collez-la ici. Cette intégration n'a pas pu être testée avec une vraie clé quand elle a été écrite : en cas d'erreur, signalez le message. Recherche seulement."
+  },
+  de: {
+    tagline:"Eine Suche für Thingiverse, Printables, MakerWorld, Thangs, Cults und MyMiniFactory",
+    placeholder:"3D-Modelle suchen (Benchy, Kopfhörerständer…)",
+    search:"Suchen",
+    price:"Preis",
+    all:"Alle",
+    free:"Kostenlos",
+    paid:"Kostenpflichtig",
+    sort:"Sortierung",
+    relevance:"Relevanz",
+    likes:"Likes",
+    downloads:"Downloads",
+    minLikes:"Min. Likes",
+    minDl:"Min. Downloads",
+    perSite:"Pro Website",
+    loadMore:"Weitere Ergebnisse laden",
+    settings:"Einstellungen",
+    back:"← Zurück zur Suche",
+    settingsIntro:"Tokens werden nur auf diesem Computer gespeichert, im Konfigurationsordner der Anwendung. Sprache und Verlauf werden in diesem Browser gespeichert.",
+    general:"Allgemein",
+    language:"Sprache",
+    historyLabel:"Suchverlauf",
+    historyHint:"Zeigt deine letzten Suchen unter der Suchleiste an. Wenn du ihn ausschaltest, wird nichts mehr gespeichert und der Verlauf ausgeblendet; mit „Verlauf löschen“ entfernst du ihn.",
+    clearHistory:"Verlauf löschen",
+    historyCleared:"Verlauf gelöscht",
+    connections:"Verbindungen zu den Websites",
+    connected:"Verbunden",
+    notConnected:"Nicht verbunden",
+    disconnect:"Trennen",
+    connectTv:"Mit Thingiverse verbinden",
+    saveToken:"Token speichern",
+    tokenApp:"App-Token",
+    tokenBearer:"Bearer-Token",
+    toastConnected:"Verbunden ✓",
+    toastDisconnected:"Getrennt",
+    hint_thingiverse:"Ohne Verbindung liest die Suche die Website mit einem Browser im Hintergrund (langsamer, ohne Autor und Likes). Mit einem Token nutzt sie die API: schneller, mit Autor, Likes und Downloads. Für Like und Sammlungen ist der Token erforderlich. Einen „App-Token“ erhältst du auf thingiverse.com/developers.",
+    hint_printables:"Die Suche funktioniert ohne Verbindung. Für Like ist ein Bearer-Token nötig: Melde dich auf der Website an, öffne die Entwicklerwerkzeuge (F12), den Reiter „Netzwerk“, und kopiere den Wert nach „Authorization: Bearer“ aus einer Anfrage an api.printables.com.",
+    hint_makerworld:"Die Suche funktioniert ohne Verbindung (benötigt einen Chromium-basierten Browser: Chrome, Edge, Brave…). Like und Sammlungen sind für MakerWorld noch nicht verfügbar: Der Token wird für später aufbewahrt und hat vorerst keine Wirkung.",
+    hint_cults3d:"Cults ist durch eine Bot-Prüfung geschützt, die automatisiertes Browsen blockiert; PrintSearch nutzt daher die offizielle Cults-API. Erstelle in deinem Cults-Konto einen kostenlosen API-Schlüssel (cults3d.com/en/api/keys) und trage hier deinen Cults-Benutzernamen und den Schlüssel ein. Nur Suche: Like und Sammlungen sind nicht verfügbar.",
+    hint_myminifactory:"MyMiniFactory blockiert automatisiertes Browsen und bittet Apps, die offizielle API zu nutzen; dafür wird ein kostenloser API-Schlüssel benötigt: Erstelle in deinem MyMiniFactory-Konto einen für eine Anwendung (myminifactory.com/pages/for-developers) und füge ihn hier ein. Diese Anbindung konnte beim Schreiben nicht mit einem echten Schlüssel getestet werden: Bei einem Fehler melde bitte die Meldung. Nur Suche.",
+    like:"Like",
+    liked:"Geliked",
+    collection:"＋ Sammlung",
+    open:"Öffnen ↗",
+    paidP:"💰 Kostenpflichtig ({p})",
+    toastLiked:"Geliked ✓",
+    toastAdded:"Hinzugefügt ✓",
+    promptCollection:"Sammlungs-ID:",
+    loadingSites:"Suche läuft… {done}/{total} Websites fertig ({n} Ergebnisse bisher)",
+    browserTitle:"Browser für die Suche",
+    browserAuto:"Automatisch (der erste gefundene)",
+    browserCustom:"Eigener Pfad…",
+    browserPathPh:"Vollständiger Pfad zur Programmdatei des Browsers",
+    save:"Speichern",
+    browserNone:"Kein kompatibler Browser gefunden",
+    browserUsing:"In Verwendung: {name} — {path}",
+    browserSaved:"Browser gespeichert ✓",
+    browserHint:"MakerWorld, Thangs und Thingiverse ohne Token werden mit einem Chromium-basierten Browser gelesen, der im Hintergrund läuft (Chrome, Edge, Brave, Vivaldi, Chromium). Edge ist unter Windows bereits installiert, du musst also vielleicht nichts installieren. Firefox und Safari werden nicht unterstützt.",
+    results:"{n} Ergebnis(se) angezeigt",
+    none:"Keine Ergebnisse für diese Kriterien.",
+    pickSite:"Wähle mindestens eine Website aus.",
+    searchOnlyTitle:"Nur Suche",
+    searchOnlyHint:"Thangs wird ohne Konto durchsucht, mit dem Browser im Hintergrund (ein Chromium-basierter Browser ist nötig). Gelesen werden nur Titel, Bild und Link: Es gibt also nichts zu verbinden, und Like und Sammlungen sind dafür nicht verfügbar.",
+    cultsUser:"Cults-Benutzername",
+    apiKey:"API-Schlüssel",
+    openSettings:"Einstellungen öffnen",
+    needKey:"Um {sites} zu durchsuchen, trage einen API-Schlüssel in den Einstellungen ein.",
+    updatesTitle:"Updates",
+    updateCheck:"Nach Updates suchen",
+    updateChecking:"Prüfe…",
+    updateAuto:"Beim Start automatisch prüfen",
+    updateVersion:"Version {v}",
+    updateUpToDate:"Du bist auf dem neuesten Stand (Version {v}).",
+    updateAvailable:"Version {v} ist verfügbar (du hast {c}).",
+    updateView:"Release ansehen",
+    updateNoRelease:"Auf GitHub wurde noch kein Release veröffentlicht.",
+    updateError:"Update-Prüfung nicht möglich: {e}",
+    updateBanner:"Update verfügbar: {v}",
+    dismiss:"Schließen",
+    updateHint:"Fragt GitHub nach der neuesten veröffentlichten Version; es wird nichts heruntergeladen oder installiert. So aktualisierst du: aus dem Quellcode „git pull“ und dann „cargo build --release“; unter Debian/Ubuntu das neue .deb von der Release-Seite laden und „sudo apt install ./datei.deb“ ausführen; unter Windows printsearch.exe ersetzen.",
+    consoleTitle:"Konsole",
+    downloadLogs:"Protokolle herunterladen",
+    consoleHint:"Gib hier Befehle ein, wie in einem Terminal: „help“ listet sie auf (search, logs, browser, update, status, quit…). Tab vervollständigt, ↑/↓ blättern durch den Verlauf.",
+    consolePlaceholder:"Befehl eingeben… (help)",
+    consoleLocalHelp:"Nur in der Konsole:\n  clear            Bildschirm leeren\n  lang <en|fr|de>  Sprache der Oberfläche ändern",
+    appTitle:"Anwendung",
+    quitApp:"PrintSearch beenden",
+    quitConfirm:"PrintSearch beenden? Das Symbol im Infobereich und der Server im Hintergrund werden gestoppt.",
+    appHint:"PrintSearch läuft im Hintergrund weiter: Suche sein Symbol im Infobereich der Taskleiste. Du kannst es hier, über das Menü des Symbols oder mit „printsearch quit“ in einem Terminal beenden.",
+    advancedTitle:"Erweiterte Einstellungen",
+    advancedOpen:"Erweiterte Einstellungen öffnen →",
+    advancedIntro:"Konsole (Terminal) und Protokolle, zur Fehlersuche und für fortgeschrittene Nutzer.",
+    advancedHint:"Werkzeuge zur Fehlersuche, für alle, die die Befehlszeile mögen. Im Alltag brauchst du sie nicht.",
+    terminalTitle:"Terminal (Konsole)",
+    openConsole:"Konsole öffnen",
+    terminalHint:"Führe dieselben Befehle wie in einem Terminal aus (search, logs, browser, status, update…), ohne die App zu verlassen. Gib „help“ ein, um sie aufzulisten.",
+    logsTitle:"Protokolle",
+    logsHint:"Das Protokoll hilft beim Melden eines Problems. Es enthält deine Suchen und Fehler, aber nie deine Tokens: Lies es, bevor du es teilst. In einem Terminal zeigt „printsearch logs“ es an.",
+    backSettings:"← Zurück zu den Einstellungen",
+    backAdvanced:"← Zurück zu den erweiterten Einstellungen",
+    closedTitle:"PrintSearch wurde geschlossen",
+    closedHint:"Du kannst diesen Tab schließen. Starte PrintSearch wieder über dein Anwendungsmenü.",
+    recent:"Letzte Suchen",
+    clearAll:"Alles löschen",
+    remove:"Entfernen"
+  }
+};
+let lang = store.get('lang', 'en'); if(!I18N[lang]) lang = 'en';          // English by default
+let historyOn = store.get('historyOn', true);
+let searchHistory = store.get('history', []); if(!Array.isArray(searchHistory)) searchHistory = [];
+let shown = [], statusKey = null, statusVars = {}, histIdx = -1;
+let updateAuto = store.get('updateAuto', true), lastUpdate = null, bannerShown = false;
+
+function tr(key, vars){
+  const s = (I18N[lang] && I18N[lang][key]) ?? I18N.en[key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => vars[k]) : s;
+}
+function setStatus(key, vars = {}){
+  statusKey = key; statusVars = vars;
+  $('#status').textContent = key ? tr(key, vars) : '';
+}
+function applyLang(){
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = tr(e.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(e => { e.placeholder = tr(e.dataset.i18nPlaceholder); });
+  document.querySelectorAll('[data-i18n-title]').forEach(e => { const x = tr(e.dataset.i18nTitle); e.title = x; e.setAttribute('aria-label', x); });
+  setStatus(statusKey, statusVars);
+  if(shown.length && !document.querySelector('.skel')){ nodeCache.clear(); renderGrid(0); }
+  if(document.body.classList.contains('view-settings')) renderSettings();
+  renderHist();
+  renderUpdateInfo(); renderBanner();
+}
+
+// ---------- Updates ----------
+function renderUpdateInfo(){
+  const out = $('#updateInfo'); out.replaceChildren();
+  const u = lastUpdate; if(!u) return;
+  if(!u.latest){ out.append(tr('updateNoRelease')); return; }
+  if(u.update_available){
+    out.append(el('strong',{}, tr('updateAvailable',{v:u.latest,c:u.current})), ' ',
+      el('a',{href:u.url,target:'_blank',rel:'noopener noreferrer'}, tr('updateView')));
+    if(u.notes) out.append(el('pre',{class:'notes'}, u.notes));   // plain text: never interpreted as HTML
+  } else out.append(tr('updateUpToDate',{v:u.current}));
+}
+function renderBanner(){
+  const b = $('#updateBanner');
+  if(!bannerShown || !lastUpdate || !lastUpdate.update_available){ b.hidden = true; return; }
+  $('#ubText').textContent = tr('updateBanner',{v:lastUpdate.latest});
+  const a = $('#ubLink'); a.textContent = tr('updateView'); a.href = lastUpdate.url;
+  b.hidden = false;
+}
+async function checkUpdate(manual){
+  const out = $('#updateInfo'), btn = $('#updateCheck');
+  if(manual){ out.textContent = tr('updateChecking'); btn.disabled = true; }
+  try{
+    lastUpdate = await api('/api/update' + (manual ? '?force=1' : ''));
+    if(lastUpdate.update_available && store.get('dismissedUpdate','') !== lastUpdate.latest) bannerShown = true;
+    if(manual) renderUpdateInfo();
+    renderBanner();
+  }catch(e){ if(manual) out.textContent = tr('updateError',{e:e.message}); }   // at start-up: silent (offline, etc.)
+  finally{ if(manual) btn.disabled = false; }
+}
+
+// ---------- Search history ----------
+function saveHistory(q){
+  if(!historyOn) return;
+  searchHistory = [q, ...searchHistory.filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 20);
+  store.set('history', searchHistory);
+}
+function removeHistory(q){ searchHistory = searchHistory.filter(x => x !== q); store.set('history', searchHistory); renderHist(); }
+function clearHistory(){ searchHistory = []; store.set('history', searchHistory); renderHist(); toast(tr('historyCleared')); }
+function histItems(){
+  const q = $('#q').value.trim().toLowerCase();
+  return searchHistory.filter(h => !q || h.toLowerCase().includes(q)).slice(0, 8);
+}
+function renderHist(){
+  const box = $('#hist');
+  const items = (historyOn && document.activeElement === $('#q')) ? histItems() : [];
+  if(!items.length){ box.hidden = true; return; }
+  const noFocusLoss = e => e.preventDefault();      // keeps the focus in the search bar
+  box.replaceChildren(
+    el('div',{class:'hhead'}, el('span',{},tr('recent')),
+      el('button',{type:'button',class:'link',onmousedown:noFocusLoss,onclick:clearHistory},tr('clearAll'))),
+    ...items.map((h,i) => el('div',{class:'hitem'+(i===histIdx?' active':''),onmousedown:noFocusLoss,onclick:()=>useHistory(h)},
+      el('span',{},'🕘'), el('span',{class:'htext'},h),
+      el('button',{type:'button',class:'hx',title:tr('remove'),onmousedown:noFocusLoss,onclick:e=>{ e.stopPropagation(); removeHistory(h); }},'✕'))));
+  box.hidden = false;
+}
+function useHistory(h){
+  $('#q').value = h; histIdx = -1; $('#hist').hidden = true;
+  clearTimeout(timer); runSearch(true);
+}
+
+const siteIcon = s => el('img',{class:'sico s-'+s,src:`/icons/${s}.svg`,alt:'',width:'22',height:'22'});
+
+function buildSiteFilters(){
+  const box = $('#filters'); box.replaceChildren();
+  for(const [key,label] of Object.entries(SITES)){
+    const cb = el('input',{type:'checkbox',value:key}); cb.checked = true;
+    box.append(el('label',{class:'site-opt'}, cb, siteIcon(key), label));
+  }
+}
+
+async function renderBrowser(){
+  let info;
+  try{ info = await api('/api/browser'); }catch(e){ return; }
+  const detected = Array.isArray(info.detected) ? info.detected : [];
+  const sel = $('#browserSel'); sel.replaceChildren();
+  sel.append(el('option', {value:'auto'}, tr('browserAuto')));
+  detected.forEach(f => sel.append(el('option', {value:f.id}, f.name)));
+  sel.append(el('option', {value:'custom'}, tr('browserCustom')));
+  const known = !info.choice || info.choice === 'auto' || detected.some(f => f.id === info.choice);
+  sel.value = known ? (info.choice || 'auto') : 'custom';
+  $('#browserPath').hidden = sel.value !== 'custom';
+  if(!known) $('#browserPath').value = info.choice;
+  const st = $('#browserState');
+  st.textContent = info.effective ? info.effective.name : tr('browserNone');
+  st.classList.toggle('on', !!info.effective);
+  $('#browserInfo').textContent = info.effective ? tr('browserUsing', {name: info.effective.name, path: info.effective.path}) : '';
+}
+
+async function renderSettings(){
+  renderBrowser();
+  try{ connected = await api('/api/status'); }catch(e){ toast(e.message); return; }
+  oauthOk = !!connected.thingiverse_oauth;
+  $('#appVersion').textContent = tr('updateVersion',{v: connected.version || ''});
+  const box = $('#siteSettings'); box.replaceChildren();
+  Object.entries(SITES).filter(([k]) => CONNECTABLE.includes(k)).forEach(([key,label],idx)=>{
+    const on = !!connected[key];
+    const rows = [];
+    if(on){
+      rows.push(el('button',{type:'button',onclick:async()=>{ await post('/api/logout',{site:key}); toast(tr('toastDisconnected')); renderSettings(); }},tr('disconnect')));
+    } else {
+      if(key==='thingiverse' && oauthOk)
+        rows.push(el('button',{type:'button',class:'primary',onclick:()=>{ location.href='/auth/thingiverse'; }},tr('connectTv')));
+      const userInput = key === 'cults3d' ? el('input',{type:'text',placeholder:tr('cultsUser'),autocomplete:'off',spellcheck:'false'}) : null;
+      const needsKey = key === 'cults3d' || key === 'myminifactory';
+      const input = el('input',{type:'password',placeholder: key==='thingiverse' ? tr('tokenApp') : needsKey ? tr('apiKey') : tr('tokenBearer'),autocomplete:'off'});
+      const save = async () => {
+        const k = input.value.trim(), u = userInput ? userInput.value.trim() : '';
+        if(userInput && !u){ userInput.focus(); return; }
+        if(!k){ input.focus(); return; }
+        const t = userInput ? `${u}:${k}` : k;                       // Cults: "name:key"
+        try{ await post('/api/login',{site:key,token:t}); toast(tr('toastConnected')); renderSettings(); }catch(e){ toast(e.message); }
+      };
+      [userInput, input].filter(Boolean).forEach(i => i.addEventListener('keydown', e => { if(e.key==='Enter') save(); }));
+      rows.push(...[userInput, input].filter(Boolean), el('button',{type:'button',class:'primary',onclick:save},tr('saveToken')));
+    }
+    const c = el('div',{class:'scard'},
+      el('div',{class:'shead'}, siteIcon(key), el('strong',{},label), el('span',{class:'state'+(on?' on':'')}, on?tr('connected'):tr('notConnected'))),
+      el('p',{class:'hint'}, tr('hint_'+key)),
+      el('div',{class:'srow'}, rows));
+    c.style.setProperty('--i', idx);
+    box.append(c);
+  });
+  const others = Object.entries(SITES).filter(([k]) => !CONNECTABLE.includes(k));
+  box.append(el('div',{class:'scard'},
+    el('div',{class:'shead'}, el('strong',{}, tr('searchOnlyTitle'))),
+    el('p',{class:'hint'}, tr('searchOnlyHint')),
+    el('div',{class:'srow'}, ...others.map(([k,l]) => el('span',{class:'site-opt'}, siteIcon(k), l)))));
+}
+
+function applyView(){
+  const h = location.hash;
+  const inSettings = h === '#parametres', inAdvanced = h === '#parametres-avances', inConsole = h === '#console';
+  document.body.classList.toggle('view-settings', inSettings);
+  document.body.classList.toggle('view-advanced', inAdvanced);
+  document.body.classList.toggle('view-console', inConsole);
+  if(inConsole) openConsole();
+  if(inSettings){ $('#langSel').value = lang; $('#histOn').checked = historyOn; $('#updateAuto').checked = updateAuto; renderUpdateInfo(); renderSettings(); }
+}
+window.addEventListener('hashchange', applyView);
+$('#gear').addEventListener('click', () => { location.hash = 'parametres'; });
+document.querySelectorAll('.backbtn').forEach(b => b.addEventListener('click', () => {
+  if(b.dataset.back){ location.hash = b.dataset.back; return; }          // go back one level (console -> advanced -> settings)
+  history.pushState('', document.title, location.pathname + location.search); applyView();   // back to the search
+}));
+$('#advancedBtn').addEventListener('click', () => { location.hash = 'parametres-avances'; });
+$('#openConsole').addEventListener('click', () => { location.hash = 'console'; });
+
+// ---------- Closing the application ----------
+function showClosed(){ $('#closed').hidden = false; }
+async function quitApp(){
+  try{ await post('/api/quit', {}); }catch(e){ /* the server may close before answering */ }
+  showClosed();
+}
+$('#quitApp').addEventListener('click', () => { if(confirm(tr('quitConfirm'))) quitApp(); });
+
+// ---------- Console: the same commands as the terminal ("printsearch <command>") ----------
+const term = { hist: [], idx: 0, busy: false, started: false };
+const TERM_CMDS = ['help','search','login','update','browser','like','collect','logs','status','quit','clear','lang','serve'];
+function termPrint(text, cls){
+  const d = el('div', {class: 'tline ' + (cls || '')}); d.textContent = text;   // plain text: never HTML
+  const box = $('#termOut'); box.append(d); box.scrollTop = box.scrollHeight;
+}
+function openConsole(){
+  if(!term.started){
+    term.started = true;
+    termPrint('PrintSearch console. Type "help" to list the commands.', 'dim');
+  }
+  setTimeout(() => $('#termIn').focus(), 50);
+}
+async function termRun(line){
+  line = line.trim(); if(!line) return;
+  termPrint('› ' + line.replace(/(--token[ =])\S+/g, '$1***'), 'cmd');     // a typed token is never left on screen
+  if(!/--token/.test(line)) term.hist.push(line);          // a command containing a token does not enter the history
+  term.idx = term.hist.length;
+  const [cmd, ...rest] = line.split(/\s+/);
+  if(cmd === 'clear' || cmd === 'cls'){ $('#termOut').replaceChildren(); return; }
+  if(cmd === 'lang'){
+    if(['en','fr','de'].includes(rest[0])){ setLang(rest[0]); termPrint('ok', 'dim'); } else termPrint('usage: lang en|fr|de', 'err');
+    return;
+  }
+  term.busy = true; $('#termIn').disabled = true;
+  try{
+    const r = await post('/api/command', {line});
+    const out = (r.output || '').replace(/\n+$/, '');
+    if(out) termPrint(out, /^error:/.test(out) ? 'err' : '');
+    if(cmd === 'help') termPrint(tr('consoleLocalHelp'), 'dim');
+    if(cmd === 'quit') showClosed();
+  }catch(e){
+    if(cmd === 'quit') showClosed(); else termPrint('error: ' + e.message, 'err');
+  }finally{
+    term.busy = false; $('#termIn').disabled = false; $('#termIn').focus();
+  }
+}
+$('#termIn').addEventListener('keydown', e => {
+  const input = e.target;
+  if(e.key === 'Enter'){ e.preventDefault(); const v = input.value; input.value = ''; termRun(v); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); if(term.hist.length){ term.idx = Math.max(0, term.idx - 1); input.value = term.hist[term.idx] || ''; } }
+  else if(e.key === 'ArrowDown'){ e.preventDefault(); term.idx = Math.min(term.hist.length, term.idx + 1); input.value = term.hist[term.idx] || ''; }
+  else if(e.key === 'l' && e.ctrlKey){ e.preventDefault(); $('#termOut').replaceChildren(); }
+  else if(e.key === 'Tab' && !/\s/.test(input.value)){
+    e.preventDefault();
+    const m = TERM_CMDS.filter(c => c.startsWith(input.value.toLowerCase()));
+    if(m.length === 1) input.value = m[0] + ' ';
+    else if(m.length > 1) termPrint(m.join('   '), 'dim');
+  }
+});
+
+function card(m, i){
+  const stats = [m.likes!=null?`♥ ${m.likes}`:null, m.downloads!=null?`⬇ ${m.downloads}`:null].filter(Boolean).join('  ');
+  const wrap = el('div',{class:'thumbwrap'});
+  if(m.thumbnail){
+    const img = el('img',{class:'thumb',src:m.thumbnail,loading:'lazy',referrerpolicy:'no-referrer',alt:''});
+    img.addEventListener('load',()=>img.classList.add('loaded'));
+    img.addEventListener('error',()=>img.remove());
+    wrap.append(img);
+  }
+  wrap.append('🧊'); // visible until the image is loaded (or when there is none)
+
+  const can = CAPS[m.site] || {};
+  const heart = () => el('span',{class:'heart'},'♥');
+  const likeBtn = el('button',{onclick:async ev=>{
+    const b = ev.currentTarget;
+    try{ await post('/api/like',{site:m.site,id:m.id}); b.classList.add('liked'); b.replaceChildren(heart(),' '+tr('liked')); toast(tr('toastLiked')); }
+    catch(e){ b.classList.add('shake'); setTimeout(()=>b.classList.remove('shake'),400); toast(e.message); }
+  }}, heart(), ' '+tr('like'));
+  const colBtn = el('button',{onclick:async ()=>{
+    const c = prompt(tr('promptCollection')); if(!c) return;
+    try{ await post('/api/collect',{site:m.site,id:m.id,collection:c}); toast(tr('toastAdded')); }catch(e){ toast(e.message) }
+  }},tr('collection'));
+
+  const c = el('div',{class:'card'}, wrap, el('div',{class:'body'},
+    el('span',{class:'badge'},siteIcon(m.site),SITES[m.site]),
+    el('div',{class:'title'},m.title),
+    el('div',{class:'meta'},m.author+(stats?(m.author?' · ':'')+stats:'')),
+    el('div',{class:'price'}, m.price==null ? '' : m.price>0 ? tr('paidP',{p:m.price}) : tr('free')),
+    el('div',{class:'actions'}, ...[can.like && likeBtn, can.collect && colBtn,
+      el('a',{href:m.url,target:'_blank',rel:'noopener noreferrer'},tr('open'))].filter(Boolean))));
+  c.style.setProperty('--i', i % 12);
+  c.addEventListener('animationend', ev => { if(ev.target === c) c.classList.add('seen'); });
+  return c;
+}
+
+function showSkeleton(n){
+  for(let i=0;i<n;i++){ const s=el('div',{class:'skel'}); s.style.animationDelay=`${i*80}ms`; $('#grid').append(s); }
+}
+const clearSkeleton = () => document.querySelectorAll('.skel').forEach(e=>e.remove());
+
+function setLoading(on){
+  $('#go').disabled = on; $('#go').classList.toggle('loading', on);
+  $('#more').disabled = on;
+}
+
+let pages = [], nodeCache = new Map(), curSort = '';
+const SITE_ORDER = Object.keys(SITES);
+
+// Merges the results of a page: one model from each site in turn, then optional sorting
+function mergePage(batch){
+  const lists = SITE_ORDER.filter(k => batch[k]).map(k => batch[k]);
+  const out = [];
+  for(let i = 0, max = Math.max(0, ...lists.map(l => l.length)); i < max; i++)
+    for(const l of lists) if(l[i]) out.push(l[i]);
+  if(curSort === 'likes') out.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
+  else if(curSort === 'downloads') out.sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0));
+  return out;
+}
+
+// Redraws the grid reusing the cards already created (no flicker, no replayed animation)
+function renderGrid(pending = 0){
+  const seenKeys = new Set(), uniq = [], nodes = [];
+  for(const m of pages.flatMap(mergePage)){
+    const key = m.site + ':' + m.id;
+    if(seenKeys.has(key)) continue;                    // same model present twice
+    seenKeys.add(key); uniq.push(m);
+    let n = nodeCache.get(key);
+    if(!n){ n = card(m, uniq.length - 1); nodeCache.set(key, n); }
+    nodes.push(n);
+  }
+  shown = uniq;
+  $('#grid').replaceChildren(...nodes);
+  if(pending > 0) showSkeleton(nodes.length ? 3 : 8);
+}
+
+// Several sites read by the same browser often fail for the same reason: a single message for all
+let errGroups = new Map();
+let skippedSites = new Set();
+function renderErrors(){
+  const nodes = [...errGroups].map(([msg, list]) => el('div', {class:'msg err'}, `${list.join(', ')} : ${msg}`));
+  if(skippedSites.size){                                  // sites whose API key is not set: explain it, it is not a failure
+    const names = [...skippedSites].map(k => SITES[k] || k).join(', ');
+    nodes.push(el('div', {class:'msg info'}, tr('needKey', {sites: names}), ' ', el('a', {href:'#parametres'}, tr('openSettings'))));
+  }
+  $('#errors').replaceChildren(...nodes);
+}
+function addSkipped(site){ skippedSites.add(site); renderErrors(); }
+function addError(site, msg){
+  if(!errGroups.has(msg)) errGroups.set(msg, []);
+  errGroups.get(msg).push(SITES[site] || site);
+  renderErrors();
+}
+function clearErrors(){ errGroups = new Map(); skippedSites = new Set(); $('#errors').replaceChildren(); }
+
+async function runSearch(reset){
+  const q = reset ? $('#q').value.trim() : lastQ;
+  if(!q) return;
+  const mySeq = ++seq;                                 // any new search cancels the previous one
+  if(ctrl) ctrl.abort();
+  ctrl = new AbortController();
+  const signal = ctrl.signal;
+  const sites = [...document.querySelectorAll('#filters input:checked')].map(c => c.value);
+  clearErrors();
+
+  if(reset){
+    document.body.classList.remove('hero');            // the bar moves up with an animation
+    pages = []; nodeCache.clear(); shown = []; page = 1; lastQ = q;
+    $('#grid').replaceChildren(); $('#more').style.display = 'none';
+  }
+  if(!sites.length){ setLoading(false); setStatus('pickSite'); return; }
+  if(reset) saveHistory(q); else page++;
+
+  curSort = $('#sort').value;
+  const batch = {}; pages[page - 1] = batch;
+  const base = {q, limit: $('#limit').value, page};
+  if($('#price').value) base.price = $('#price').value;
+  if($('#sort').value) base.sort = $('#sort').value;
+  if($('#minlikes').value) base.min_likes = $('#minlikes').value;
+  if($('#mindl').value) base.min_downloads = $('#mindl').value;
+
+  let pending = sites.length, raw = 0, failures = 0;
+  setLoading(true);
+  setStatus('loadingSites', {done: 0, total: sites.length, n: shown.length});
+  renderGrid(pending);                                 // grey cards while waiting for the 1st answer
+
+  // One call per site, in parallel: fast sites are displayed without waiting for slow ones
+  await Promise.all(sites.map(async site => {
+    try{
+      const r = await api('/api/search?' + new URLSearchParams({...base, sites: site}), {signal});
+      if(mySeq !== seq) return;
+      batch[site] = r.results; raw += r.raw;
+      for(const k of r.skipped || []) addSkipped(k);
+      for(const [k, msg] of Object.entries(r.errors)){ failures++; addError(k, msg); }
+    }catch(err){
+      if(err.name === 'AbortError' || mySeq !== seq) return;
+      failures++; addError(site, err.message);
+    }finally{
+      if(mySeq === seq){
+        pending--;
+        renderGrid(pending);
+        setStatus(pending ? 'loadingSites' : (shown.length ? 'results' : 'none'), {done: sites.length - pending, total: sites.length, n: shown.length});
+      }
+    }
+  }));
+  if(mySeq !== seq) return;
+  setLoading(false);
+  if(!reset && failures === sites.length){ page--; pages.pop(); }   // next page failed: it can be retried
+  $('#more').style.display = raw > 0 ? '' : 'none';
+}
+
+// Automatic search when a filter changes (with a query already typed)
+function autoSearch(delay){
+  if(!$('#q').value.trim()) return;
+  clearTimeout(timer); timer = setTimeout(()=>runSearch(true), delay);
+}
+const stage = document.querySelector('.stage');
+stage.addEventListener('change', e => { if(e.target.matches('.filters input[type=checkbox], .filters select')) autoSearch(0); });
+stage.addEventListener('input',  e => { if(e.target.matches('.filters input[type=number]')) autoSearch(500); });
+
+$('#f').addEventListener('submit', e => { e.preventDefault(); clearTimeout(timer); $('#hist').hidden = true; runSearch(true); });
+$('#more').addEventListener('click', () => runSearch(false));
+$('#brand').addEventListener('click', () => {      // back to the home screen
+  if(ctrl) ctrl.abort(); seq++; clearTimeout(timer);
+  setLoading(false); clearSkeleton();
+  $('#grid').replaceChildren(); clearErrors(); setStatus(null); $('#more').style.display='none';
+  $('#q').value=''; lastQ=''; shown=[]; pages=[]; nodeCache.clear(); document.body.classList.add('hero'); $('#q').focus();
+});
+
+// History: shown when the search bar has the focus
+$('#q').addEventListener('focus', () => { histIdx = -1; renderHist(); });
+$('#q').addEventListener('input', () => { histIdx = -1; renderHist(); });
+$('#q').addEventListener('blur', () => { $('#hist').hidden = true; });
+$('#q').addEventListener('keydown', e => {
+  const items = histItems();
+  if($('#hist').hidden || !items.length){ if(e.key === 'ArrowDown'){ histIdx = -1; renderHist(); } return; }
+  if(e.key === 'ArrowDown'){ e.preventDefault(); histIdx = (histIdx + 1) % items.length; renderHist(); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); histIdx = histIdx <= 0 ? items.length - 1 : histIdx - 1; renderHist(); }
+  else if(e.key === 'Enter' && histIdx >= 0){ e.preventDefault(); useHistory(items[histIdx]); }
+  else if(e.key === 'Escape'){ $('#hist').hidden = true; }
+});
+
+// General settings
+function setLang(v){
+  if(!I18N[v]) return;
+  lang = v; store.set('lang', lang); $('#langSel').value = lang; applyLang();
+  post('/api/lang', {lang}).catch(() => {});          // remembered by the application for the tray icon menu
+}
+$('#langSel').addEventListener('change', e => setLang(e.target.value));
+$('#histOn').addEventListener('change', e => { historyOn = e.target.checked; store.set('historyOn', historyOn); renderHist(); });
+$('#clearHist').addEventListener('click', clearHistory);
+$('#updateCheck').addEventListener('click', () => checkUpdate(true));
+$('#updateAuto').addEventListener('change', e => { updateAuto = e.target.checked; store.set('updateAuto', updateAuto); });
+$('#ubClose').addEventListener('click', () => { bannerShown = false; if(lastUpdate) store.set('dismissedUpdate', lastUpdate.latest); renderBanner(); });
+$('#browserSel').addEventListener('change', () => { $('#browserPath').hidden = $('#browserSel').value !== 'custom'; });
+$('#browserSave').addEventListener('click', async () => {
+  const v = $('#browserSel').value === 'custom' ? $('#browserPath').value.trim() : $('#browserSel').value;
+  if(!v){ $('#browserPath').focus(); return; }
+  try{ await post('/api/browser', {choice: v}); toast(tr('browserSaved')); renderBrowser(); }catch(e){ toast(e.message); }
+});
+
+applyLang();
+post('/api/lang', {lang}).catch(() => {});   // the application thus knows the language from the very first launch
+buildSiteFilters();
+applyView();
+renderHist();
+if(updateAuto) setTimeout(() => checkUpdate(false), 2500);   // discreet: after start-up
+</script>
+</body>
+</html>
